@@ -5,6 +5,7 @@
 #include <sstream>
 #include <sys/wait.h>
 #include <iomanip>
+#include <algorithm>
 #include "Commands.h"
 
 using namespace std;
@@ -88,6 +89,10 @@ void _printError(const string err){
 
 // TODO: Add your implementation for classes in Commands.h 
 
+void ExternalCommand::execute() {
+
+}
+
 SmallShell::SmallShell() {
 // TODO: add your implementation
 }
@@ -138,24 +143,75 @@ void ChangeDirCommand::execute() {
         _printError("cd: OLDPWD not set");
     }
     else{
-        string curr_PWD = getcwd(nullptr, INT32_MAX);
+        string curr_PWD = getcwd(nullptr, COMMAND_ARGS_MAX_LENGTH);
         int res = 0;
         if(!strcmp(path, "-")){
+            //Return to last path
             res = chdir(last_PWD.c_str());
         }
-
         else{
+            //Change to new path
             res = chdir(path);
         }
         if(res == -1){
+            //Error...
             perror("smash error: cd failed");
             return;
         }
-
-        last_PWD = curr_PWD;
+        else{
+            //Succeed so save last path
+            last_PWD = curr_PWD;
+        }
     }
 }
 
 void ShowPidCommand::execute() {
     cout << "smash pid is " << getpid() << endl;
+}
+
+void GetCurrDirCommand::execute() {
+    cout << getcwd(nullptr, COMMAND_ARGS_MAX_LENGTH) << endl;
+}
+
+void JobsList::addJob(string cmd, bool isStopped, pid_t pid) {
+    removeFinishedJobs();
+    curr_max_id++;
+    JobStat status = isStopped ? Stopped : Running;
+    JobEntry newEntry = JobEntry(cmd, curr_max_id, pid, time(nullptr), status);
+    jobs.push_back(newEntry);
+}
+
+void JobsList::printJobsList() {
+    removeFinishedJobs();
+    //Sort vector elements according to job ID
+    sort(jobs.begin(),jobs.end());
+
+    for(JobEntry currJob : jobs){
+        //Calculate running time
+        time_t time_running = time(nullptr) - currJob.getStartTime();
+
+        cout << "[" << currJob.getJobId() << "] " << currJob.getCmd() << " : " << currJob.getJobPid() << " ";
+        cout << time_running << " secs";
+        if(currJob.getJobStatus() == Stopped){
+            cout << " (stopped)";
+        }
+        cout << endl;
+    }
+}
+
+void JobsList::killAllJobs() {
+    removeFinishedJobs();
+    for(JobEntry currJob : jobs){
+        pid_t currPid = currJob.getJobPid();
+        if(kill(currPid, SIGKILL) == -1){
+            perror("smash error: kill failed");
+        }
+        else{
+            cout << currPid <<": " << currJob.getCmd() <<endl;
+        }
+    }
+}
+
+void JobsList::removeFinishedJobs() {
+    
 }

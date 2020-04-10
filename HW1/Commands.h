@@ -15,7 +15,7 @@ protected:
     int num_arguments;
 
  public:
-  Command(const char* cmd_line);
+  explicit Command(const char* cmd_line);
   virtual ~Command() = default;
   virtual void execute() = 0;
   //virtual void prepare();
@@ -25,14 +25,14 @@ protected:
 
 class BuiltInCommand : public Command {
  public:
-  BuiltInCommand(const char* cmd_line) : command;
-  virtual ~BuiltInCommand() {}
+  explicit BuiltInCommand(const char* cmd_line) : Command(cmd_line) {};
+  ~BuiltInCommand() override =default;
 };
 
 class ExternalCommand : public Command {
  public:
-  ExternalCommand(const char* cmd_line);
-  virtual ~ExternalCommand() {}
+  explicit ExternalCommand(const char* cmd_line) : Command(cmd_line) {};
+  virtual ~ExternalCommand() = default;
   void execute() override;
 };
 
@@ -62,10 +62,11 @@ class ChangeDirCommand : public BuiltInCommand {
   void execute() override;
 };
 
+// This is the PWD command
 class GetCurrDirCommand : public BuiltInCommand {
  public:
-  GetCurrDirCommand(const char* cmd_line);
-  virtual ~GetCurrDirCommand() {}
+  GetCurrDirCommand(const char* cmd_line) : BuiltInCommand(cmd_line){};
+  virtual ~GetCurrDirCommand() = default;
   void execute() override;
 };
 
@@ -87,14 +88,55 @@ class QuitCommand : public BuiltInCommand {
 
 class JobsList {
  public:
-  class JobEntry {
+    enum JobStat {Running, Stopped};
+    class JobEntry {
    // TODO: Add your data members
+
+    string cmd_line;
+    int id_job;
+    pid_t pid_job;
+    time_t start_time;
+    JobStat status;
+
+  public:
+      JobEntry(string cmd_line, int id, pid_t pid, time_t time, JobStat status) : cmd_line(cmd_line), id_job(id),
+        pid_job(pid), start_time(time), status(status) {}
+
+      ~JobEntry() = default;
+
+      bool operator< (const JobEntry& job) const{
+          return (id_job < job.id_job);
+      }
+
+      time_t getStartTime(){
+          return start_time;
+      }
+
+      int getJobId(){
+          return id_job;
+      }
+
+      string getCmd(){
+          return cmd_line;
+      }
+
+      pid_t getJobPid(){
+          return pid_job;
+      }
+
+      JobStat getJobStatus(){
+          return status;
+      }
   };
  // TODO: Add your data members
+private:
+    int curr_max_id;
+    vector<JobEntry> jobs;
+
  public:
-  JobsList();
-  ~JobsList();
-  void addJob(Command* cmd, bool isStopped = false);
+    JobsList() : curr_max_id(0) {};
+  ~JobsList() = default;
+  void addJob(string cmd, bool isStopped = false, pid_t pid);
   void printJobsList();
   void killAllJobs();
   void removeFinishedJobs();
