@@ -293,6 +293,28 @@ void JobsList::removeFinishedJobs() {
     }
 }
 
+int JobsList::getJobsSize() {
+    return jobs.size();
+}
+
+void JobsList::fgJob(int jobId) {
+    JobEntry* job = getJobById(jobId);
+    cout << job->getCmd() << " : " << job->getJobPid() << endl;
+
+    pid_t job_pid = job->getJobPid();
+    if(kill(job_pid, SIGCONT) == -1){
+        perror("smash error: kill failed");
+    }
+    else{
+        int res = waitpid(job_pid, nullptr, WUNTRACED);
+        if(res == -1){
+            perror("smash error: waitpid failed");
+        }
+    }
+    removeJobById(jobId);
+}
+
+
 void JobsCommand::execute() {
     jobs_list->printJobsList();
 }
@@ -316,9 +338,69 @@ void KillCommand::execute() {
     }
     string signum = arguments[1];
     string job_id = arguments[2];
+
+    //Determine if '-' sign exits and the arguments are numbers
     if(arguments[1][0] != '-' || !checkNumber(signum.substr(1)) || !checkNumber(job_id)){
         _printError("kill: invalid arguments");
+        return;
     }
 
+    //Arrive here -> syntax is valid!
+    int signal_num = atoi(arguments[1]);
+    int id_num = atoi(arguments[2]);
+    //Check if job id exits
+    if(jobs_list->getJobById(id_num) == nullptr){
+        _printError("kill: job-id " + job_id + " does not exist");
+    }
 
+    //All valid -> send signal
+
+    pid_t pid = jobs_list->getJobById(id_num)->getJobPid();
+    signal_num = (-1) * signal_num;
+    if(kill(pid, signal_num) == -1){
+        //Error...
+        perror("smash error: kill failed");
+    }
+    else{
+        cout << "signal number " << (-1) * signal_num << " was sent to pid " << pid << endl;
+    }
+}
+
+void ForegroundCommand::execute() {
+    if(num_arguments > 2){
+        _printError("fg: invalid arguments");
+        return;
+    }
+
+    if(num_arguments == 2){
+        //If job-id exits:
+
+        if(!checkNumber(arguments[1])){
+            _printError("fg: invalid arguments");
+            return;
+        }
+        int job_id = atoi(arguments[1]);
+        if(jobs_list->getJobById(job_id) == nullptr){
+            //Job dosent exist..
+            _printError("fg: job-id " + to_string(job_id) + " does not exist");
+            return;
+        }
+        //All good - fg the job
+        jobs_list->fgJob(job_id);
+    }
+    else{
+        //Job id was not given:
+
+        if(jobs_list->getJobsSize() == 0){
+            _printError("fg: jobs list is empty");
+        }
+        else {
+            int last_job_id = jobs_list->getLastJob()->getJobId();
+            jobs_list->fgJob(last_job_id);
+        }
+    }
+}
+
+void BackgroundCommand::execute() {
+    
 }

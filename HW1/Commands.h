@@ -5,7 +5,6 @@
 using namespace std;
 #define COMMAND_ARGS_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
-#define HISTORY_MAX_RECORDS (50)
 
 class Command {
 // TODO: Add your data members
@@ -144,6 +143,8 @@ private:
   void removeJobById(int jobId);
   JobEntry * getLastJob();
   JobEntry *getLastStoppedJob();
+  int getJobsSize();
+  void fgJob(int jobId);
   // TODO: Add extra methods or modify exisitng ones as needed
 };
 
@@ -166,18 +167,18 @@ class KillCommand : public BuiltInCommand {
 };
 
 class ForegroundCommand : public BuiltInCommand {
- // TODO: Add your data members
+ JobsList* jobs_list;
  public:
-  ForegroundCommand(const char* cmd_line, JobsList* jobs);
-  virtual ~ForegroundCommand() {}
+  ForegroundCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line), jobs_list(jobs) {};
+  virtual ~ForegroundCommand() = default;
   void execute() override;
 };
 
 class BackgroundCommand : public BuiltInCommand {
- // TODO: Add your data members
+ JobsList* jobs_list;
  public:
-  BackgroundCommand(const char* cmd_line, JobsList* jobs);
-  virtual ~BackgroundCommand() {}
+  BackgroundCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line), jobs_list(jobs) {};
+  virtual ~BackgroundCommand() = default;
   void execute() override;
 };
 
