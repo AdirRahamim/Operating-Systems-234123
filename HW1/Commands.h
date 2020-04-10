@@ -130,11 +130,11 @@ class JobsList {
   };
  // TODO: Add your data members
 private:
-    int curr_max_id;
+    int max_id;
     vector<JobEntry> jobs;
 
  public:
-    JobsList() : curr_max_id(0) {};
+    JobsList() : max_id(0) {};
   ~JobsList() = default;
   void addJob(string cmd, bool isStopped = false, pid_t pid);
   void printJobsList();
@@ -142,24 +142,26 @@ private:
   void removeFinishedJobs();
   JobEntry * getJobById(int jobId);
   void removeJobById(int jobId);
-  JobEntry * getLastJob(int* lastJobId);
-  JobEntry *getLastStoppedJob(int *jobId);
+  JobEntry * getLastJob();
+  JobEntry *getLastStoppedJob();
   // TODO: Add extra methods or modify exisitng ones as needed
 };
 
 class JobsCommand : public BuiltInCommand {
  // TODO: Add your data members
+ JobsList* jobs_list;
  public:
-  JobsCommand(const char* cmd_line, JobsList* jobs);
-  virtual ~JobsCommand() {}
+  JobsCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line), jobs_list(jobs) {};
+  virtual ~JobsCommand() = default;
   void execute() override;
 };
 
 class KillCommand : public BuiltInCommand {
+  JobsList* jobs_list;
  // TODO: Add your data members
  public:
-  KillCommand(const char* cmd_line, JobsList* jobs);
-  virtual ~KillCommand() {}
+  KillCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line), jobs_list(jobs) {};
+  virtual ~KillCommand() = default;
   void execute() override;
 };
 
@@ -196,6 +198,8 @@ class SmallShell {
   // TODO: Add your data members
   SmallShell();
  public:
+  JobsList* jobs_list;
+
   Command *CreateCommand(const char* cmd_line);
   SmallShell(SmallShell const&)      = delete; // disable copy ctor
   void operator=(SmallShell const&)  = delete; // disable = operator

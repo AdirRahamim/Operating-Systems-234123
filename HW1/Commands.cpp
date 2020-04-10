@@ -175,9 +175,9 @@ void GetCurrDirCommand::execute() {
 
 void JobsList::addJob(string cmd, bool isStopped, pid_t pid) {
     removeFinishedJobs();
-    curr_max_id++;
+    max_id++;
     JobStat status = isStopped ? Stopped : Running;
-    JobEntry newEntry = JobEntry(cmd, curr_max_id, pid, time(nullptr), status);
+    JobEntry newEntry = JobEntry(cmd, max_id, pid, time(nullptr), status);
     jobs.push_back(newEntry);
 }
 
@@ -212,6 +212,113 @@ void JobsList::killAllJobs() {
     }
 }
 
+JobsList::JobEntry *JobsList::getJobById(int jobId) {
+    for(JobEntry currJob : jobs){
+        if(currJob.getJobId() == jobId){
+            //Found job
+            return &currJob;
+        }
+    }
+    return nullptr;
+}
+
+void JobsList::removeJobById(int jobId) {
+    int i=0;
+    for(JobEntry currJob : jobs){
+        if(currJob.getJobId() == jobId){
+            //Found job to remove
+            jobs.erase(jobs.begin()+i);
+            break;
+        }
+        i++;
+    }
+    if(jobs.empty()){
+        max_id = 0;
+    }
+    else{
+        max_id = getLastJob()->getJobId();
+    }
+
+}
+
+JobsList::JobEntry *JobsList::getLastJob() {
+    JobEntry* lastJob = nullptr;
+    int last_id = 0;
+    for(JobEntry currJob : jobs){
+        if(currJob.getJobId() > last_id){
+            last_id = currJob.getJobId();
+            lastJob = &currJob;
+        }
+    }
+    return lastJob;
+}
+
+JobsList::JobEntry *JobsList::getLastStoppedJob() {
+    JobEntry* lastJob = nullptr;
+    int last_id = 0;
+    for(JobEntry currJob : jobs){
+        if(currJob.getJobId() > last_id && currJob.getJobStatus() == Stopped){
+            last_id = currJob.getJobId();
+            lastJob = &currJob;
+        }
+    }
+    return lastJob;
+}
+
 void JobsList::removeFinishedJobs() {
-    
+    int res =  0;
+    pid_t pid;
+
+    auto it = jobs.begin();
+    while(it != jobs.end()){
+        pid = it->getJobPid();
+        res = waitpid(pid, nullptr, WHOHANG);
+
+        if(res == -1){
+            perror("smash error: waitpid fai;ed");
+            continue;
+        }
+        else if(res == pid){
+            it = jobs.erase(it);
+        }
+        else{
+            it++;
+        }
+        if(jobs.empty()){
+            max_id = 0;
+        }
+        else{
+            max_id = getLastJob()->getJobId();
+        }
+    }
+}
+
+void JobsCommand::execute() {
+    jobs_list->printJobsList();
+}
+
+bool checkNumber(string s){
+    for(i=0 ; i<s.length() ; i++){
+        if(!isdigit(s[i])){
+            return false;
+        }
+    }
+    return true;
+}
+
+void KillCommand::execute() {
+    jobs_list->removeFinishedJobs();
+
+    //Right number of arguments
+    if(num_arguments != 3){
+        _printError("kill: invalid arguments");
+        return;
+    }
+    string signum = arguments[1];
+    string job_id = arguments[2];
+    if(arguments[1][0] != '-' || !checkNumber(signum.substr(1)) || !checkNumber(job_id)){
+        _printError("kill: invalid arguments");
+    }
+
+
 }
