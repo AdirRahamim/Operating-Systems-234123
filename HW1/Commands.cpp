@@ -6,11 +6,14 @@
 #include <sys/wait.h>
 #include <iomanip>
 #include <algorithm>
+#include <fcntl.h>
 #include "Commands.h"
 
 using namespace std;
 
 const std::string WHITESPACE = " \n\r\t\f\v";
+
+#define BASH_PATH "/bin/bash"
 
 #if 0
 #define FUNC_ENTRY()  \
@@ -87,9 +90,211 @@ void _printError(const string err){
     cout << "smash error: " << err << endl;
 }
 
-// TODO: Add your implementation for classes in Commands.h 
+// TODO: Add your implementation for classes in Commands.h
+
+void RedirectionCommand::execute() {
+    bool is_bg = false;
+    string new_command = command;
+    if(_isBackgroundComamnd(command.c_str())){
+        //Ends with &
+        is_bg = true;
+
+        char temp[COMMAND_ARGS_MAX_LENGTH];
+        strcpy(temp, command.c_str());
+        _removeBackgroundSign(temp);
+        new_command = string(temp);
+    }
+
+    //Produce first and second command
+    int redirect = new_command.find('>');
+    bool isAppend = new_command[redirect+1] == '>';
+    string cmd = new_command.substr(0,redirect);
+    string file_path = new_command.substr(redirect+1+(int)isAppend);
+    int file;
+    if(isAppend){
+        file = open(file_path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0666);
+        if(file == -1){
+            perror("smash error: open failed");
+            return;
+        }
+    }
+    else {
+        file = open(file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (file == -1) {
+            perror("smash error: open failed");
+            return;
+        }
+    }
+    SmallShell& temp_smash = SmallShell::getInstance();
+    auto _command = temp_smash.CreateCommand(cmd.c_str());
+
+    int pid = fork();
+
+    if( pid < 0){
+        perror("smash error: fork failed");
+        return;
+    }
+    else if(pid == 0){
+        //Child process
+        setpgrp();
+        if(dup2(file,STDERR_FILENO) == -1){
+            perror("smash error: dup2 failed");
+            return;
+        }
+        _command->execute();
+        exit(0);
+    }
+    else{
+        if(is_bg){
+            jobs_list->addJob(cmd,false, pid);
+            return; //No need to wait...
+        }
+        else{
+            int res = waitpid(pid, nullptr, WUNTRACED);
+            if(res == -1){
+                perror("smash error: waitpid failed");
+                return;
+            }
+            if(close(file) == -1){
+                perror("smash error: close failed");
+                return;
+            }
+        }
+    }
+}
+
+void PipeCommand::execute() {
+    bool is_bg = false;
+    string new_command = command;
+    if(_isBackgroundComamnd(command.c_str())){
+        //Ends with &
+        is_bg = true;
+
+        char temp[COMMAND_ARGS_MAX_LENGTH];
+        strcpy(temp, command.c_str());
+        _removeBackgroundSign(temp);
+        new_command = string(temp);
+    }
+
+    //Produce first and second command
+    int pipeIndex = new_command.find('|');
+    bool isStderrPipe = new_command[pipeIndex+1] == '&';
+    string cmd1 = new_command.substr(0,pipeIndex);
+    string cmd2 = new_command.substr(pipeIndex+1+(int)isStderrPipe);
+
+    SmallShell& temp_smash = SmallShell::getInstance();
+    auto command1 = temp_smash.CreateCommand(cmd1.c_str());
+    auto command2 = temp_smash.CreateCommand(cmd2.c_str());
+
+    //Create pipe
+    int fd[2];
+    if(pipe(fd) == -1){
+        perror("smash error: pipe failed");
+        return;
+    }
+
+    pid_t pid = fork();
+    if( pid < 0){
+        perror("smash error: fork failed");
+        return;
+    }
+    else if(pid == 0){
+        //Child process
+        setpgrp();
+        if(isStderrPipe){
+            if(dup2(fd[1],STDERR_FILENO) == -1){
+                perror("smash error: dup2 failed");
+                return;
+            }
+        }
+        else{
+            if(dup2(fd[1],STDOUT_FILENO) == -1){
+                perror("smash error: dup2 failed");
+                return;
+            }
+        }
+        close(fd[0]);
+        close(fd[1]);
+        command1->execute();
+        exit(0);
+    }
+    else{
+        //Parent process
+        int pid2 = fork();
+        if( pid2 < 0){
+            perror("smash error: fork failed");
+            return;
+        }
+        else if(pid2 == 0){
+            if(dup2(fd[1],STDIN_FILENO) == -1){
+                perror("smash error: dup2 failed");
+                return;
+            }
+            close(fd[0]);
+            close(fd[1]);
+            command2->execute();
+            exit(0);
+        }
+        else{
+            close(fd[0]);
+            close(fd[1]);
+            if(is_bg){
+                jobs_list->addJob(cmd1, false, pid);
+                jobs_list->addJob(cmd2,false, pid2);
+                return; //No need to wait...
+            }
+            else{
+                int res1 = waitpid(pid, nullptr, WUNTRACED);
+                int res2 = waitpid(pid2, nullptr, WUNTRACED);
+                if(res1 == -1 || res2 == -1){
+                    perror("smash error: waitpid failed");
+                    return;
+                }
+            }
+        }
+    }
+}
 
 void ExternalCommand::execute() {
+    bool is_bg = false;
+    string new_command = command;
+    if(_isBackgroundComamnd(command.c_str())){
+        //Ends with &
+        is_bg = true;
+
+        char temp[COMMAND_ARGS_MAX_LENGTH];
+        strcpy(temp, command.c_str());
+        _removeBackgroundSign(temp);
+        new_command = string(temp);
+    }
+
+    pid_t pid = fork();
+    if( pid < 0){
+        perror("smash error: fork failed");
+        return;
+    }
+    else if( pid == 0){ //Child proccess
+        setpgrp();
+        execl(BASH_PATH, "bash", "-c", new_command.c_str(), nullptr);
+        perror("smash error: execl failed");
+        return;
+    }
+    else{ //Parent
+        if(is_bg){
+            //Background command -> add to job list
+            jobs_list->addJob(command,false, pid);
+            return;
+        }
+        else{
+            //Running foreground -> wait to finish
+            int res = waitpid(pid, nullptr, WUNTRACED);
+            if(res == -1){
+                perror("smash error: waitpid failed");
+                return;
+            }
+        }
+    }
+
 
 }
 
@@ -105,6 +310,7 @@ SmallShell::~SmallShell() {
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
+
 Command * SmallShell::CreateCommand(const char* cmd_line) {
 	// For example:
 /*
@@ -134,6 +340,14 @@ Command::Command(const char *cmd_line) {
     num_arguments = _parseCommandLine(cmd_line, arguments);
 }
 
+BuiltInCommand::BuiltInCommand(const char *cmd_line) : Command(cmd_line) {
+    command = string(cmd_line);
+    char temp[COMMAND_ARGS_MAX_LENGTH];
+    strcpy(temp, cmd_line);
+    _removeBackgroundSign(temp);
+    num_arguments = _parseCommandLine(temp, arguments);
+}
+
 void ChangeDirCommand::execute() {
     char* path = this->arguments[1];
     if(this->num_arguments>2){
@@ -143,7 +357,13 @@ void ChangeDirCommand::execute() {
         _printError("cd: OLDPWD not set");
     }
     else{
-        string curr_PWD = getcwd(nullptr, COMMAND_ARGS_MAX_LENGTH);
+        char* temp = get_current_dir_name();
+        if(temp == nullptr){
+            perror("smash error: get_current_dir_name failed");
+            return;
+        }
+        string curr_PWD = string(temp);
+        free(temp);
         int res = 0;
         if(!strcmp(path, "-")){
             //Return to last path
@@ -170,8 +390,13 @@ void ShowPidCommand::execute() {
 }
 
 void GetCurrDirCommand::execute() {
-    cout << getcwd(nullptr, COMMAND_ARGS_MAX_LENGTH) << endl;
+    char* temp = get_current_dir_name();
+    cout << temp << endl;
+    free(temp);
 }
+
+
+
 
 void JobsList::addJob(string cmd, bool isStopped, pid_t pid) {
     removeFinishedJobs();
@@ -210,6 +435,7 @@ void JobsList::killAllJobs() {
             cout << currPid <<": " << currJob.getCmd() <<endl;
         }
     }
+    max_id = 0;
 }
 
 JobsList::JobEntry *JobsList::getJobById(int jobId) {
@@ -275,7 +501,7 @@ void JobsList::removeFinishedJobs() {
         res = waitpid(pid, nullptr, WHOHANG);
 
         if(res == -1){
-            perror("smash error: waitpid fai;ed");
+            perror("smash error: waitpid failed");
             continue;
         }
         else if(res == pid){
@@ -314,10 +540,11 @@ void JobsList::fgJob(int jobId) {
     removeJobById(jobId);
 }
 
-
 void JobsCommand::execute() {
     jobs_list->printJobsList();
 }
+
+
 
 bool checkNumber(string s){
     for(i=0 ; i<s.length() ; i++){
@@ -402,5 +629,65 @@ void ForegroundCommand::execute() {
 }
 
 void BackgroundCommand::execute() {
-    
+    if(num_arguments > 2){
+        _printError("fg: invalid arguments");
+        return;
+    }
+
+    if(num_arguments == 2){
+        //If job-id exits:
+
+        if(!checkNumber(arguments[1])){
+            _printError("fg: invalid arguments");
+            return;
+        }
+        int job_id = atoi(arguments[1]);
+        if(jobs_list->getJobById(job_id) == nullptr){
+            //Job dosent exist..
+            _printError("bg: job-id " + to_string(job_id) + " does not exist");
+            return;
+        }
+
+        if(jobs_list->getJobById(job_id)->getJobStatus() == JobsList::Running){
+            _printError("bg: job-id " +to_string(job_id) + " is already running in the background");
+            return;
+        }
+
+        //All good - bg the job
+        JobsList::JobEntry* job = jobs_list->getJobById(job_id);
+        cout << job->getCmd() << " : " << job->getJobPid() << endl;
+        if(kill(job->getJobPid(), SIGCONT) == -1){
+            perror("smash error: kill failed");
+        }
+        else{
+            job->setJobStatus(JobsList::Running);
+        }
+    }
+    else{
+        //Job id was not given:
+
+        if(jobs_list->getLastStoppedJob() == nullptr){
+            _printError("bg: there is no stopped jobs to resume");
+        }
+        else {
+            JobsList::JobEntry* job = jobs_list->getLastStoppedJob();
+            cout << job->getCmd() << " : " << job->getJobPid() << endl;
+            if(kill(job->getJobPid(), SIGCONT) == -1){
+                perror("smash error: kill failed");
+            }
+            else{
+                job->setJobStatus(JobsList::Running);
+            }
+        }
+    }
+}
+
+void QuitCommand::execute() {
+    if(num_arguments > 1){
+        if(string(arguments[1]) == "kill"){
+            cout << "smash: sending SIGKILL signal to " << to_string(num_arguments) << " jobs:" <<endl;
+            jobs_list->killAllJobs();
+        }
+    }
+    exit(0);
 }

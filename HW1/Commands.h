@@ -24,30 +24,34 @@ protected:
 
 class BuiltInCommand : public Command {
  public:
-  explicit BuiltInCommand(const char* cmd_line) : Command(cmd_line) {};
+  explicit BuiltInCommand(const char* cmd_line);
   ~BuiltInCommand() override =default;
 };
 
+class JobsList;
 class ExternalCommand : public Command {
+ JobsList* jobs_list;
  public:
-  explicit ExternalCommand(const char* cmd_line) : Command(cmd_line) {};
+  explicit ExternalCommand(const char* cmd_line, JobsList* jobs) : Command(cmd_line), jobs_list(jobs) {};
   virtual ~ExternalCommand() = default;
   void execute() override;
 };
 
 class PipeCommand : public Command {
   // TODO: Add your data members
+  JobsList* jobs_list;
  public:
-  PipeCommand(const char* cmd_line);
-  virtual ~PipeCommand() {}
+  PipeCommand(const char* cmd_line, JobsList* jobs) : Command(cmd_line), jobs_list(jobs) {};
+  virtual ~PipeCommand() = default;
   void execute() override;
 };
 
 class RedirectionCommand : public Command {
  // TODO: Add your data members
+ JobsList* jobs_list;
  public:
-  explicit RedirectionCommand(const char* cmd_line);
-  virtual ~RedirectionCommand() {}
+  explicit RedirectionCommand(const char* cmd_line, JobsList* jobs) : Command(cmd_line), jobs_list(jobs) {};
+  virtual ~RedirectionCommand() = default;
   void execute() override;
   //void prepare() override;
   //void cleanup() override;
@@ -76,11 +80,11 @@ class ShowPidCommand : public BuiltInCommand {
   void execute() override;
 };
 
-class JobsList;
 class QuitCommand : public BuiltInCommand {
+    JobsList* jobs_list;
 // TODO: Add your data members public:
-  QuitCommand(const char* cmd_line, JobsList* jobs);
-  virtual ~QuitCommand() {}
+  QuitCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line), jobs_list(jobs) {};
+  virtual ~QuitCommand() = default;
   void execute() override;
 };
 
@@ -125,6 +129,10 @@ class JobsList {
 
       JobStat getJobStatus(){
           return status;
+      }
+
+      void setJobStatus(JobStat new_status){
+          status = new_status;
       }
   };
  // TODO: Add your data members
