@@ -93,7 +93,7 @@ void _printError(const string err){
 // TODO: Add your implementation for classes in Commands.h
 
 void CopyCommand::execute() {
-    if(num_arguments < 3 || num_arguments == 4 == arguments[3] != '&' || num_arguments > 4){
+    if(num_arguments < 3 || (num_arguments == 4 && arguments[3][0] != '&') || num_arguments > 4){
         _printError("cp: invalid arguments");
         return;
     }
