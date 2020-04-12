@@ -682,6 +682,9 @@ void JobsList::fgJob(int jobId) {
     cout << job->getCmd() << " : " << job->getJobPid() << endl;
 
     pid_t job_pid = job->getJobPid();
+
+    setFg(job->getCmd(), job_pid);
+    removeJobById(jobId);
     if(kill(job_pid, SIGCONT) == -1){
         perror("smash error: kill failed");
     }
@@ -691,7 +694,7 @@ void JobsList::fgJob(int jobId) {
             perror("smash error: waitpid failed");
         }
     }
-    removeJobById(jobId);
+    setFg("", -1);
 }
 
 void JobsList::setFg(string cmd, pid_t pid) {
@@ -827,6 +830,7 @@ void BackgroundCommand::execute() {
             perror("smash error: kill failed");
         }
         else{
+
             job->setJobStatus(JobsList::Running);
         }
     }

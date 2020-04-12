@@ -59,9 +59,9 @@ class RedirectionCommand : public Command {
 
 class ChangeDirCommand : public BuiltInCommand {
 // TODO: Add your data members public:
-  string last_PWD;
+  string& last_PWD;
 public:
-  ChangeDirCommand(const char *cmd_line, string plastPwd) : BuiltInCommand(cmd_line), last_PWD(plastPwd){};
+  ChangeDirCommand(const char *cmd_line, string& plastPwd) : BuiltInCommand(cmd_line), last_PWD(plastPwd){};
   virtual ~ChangeDirCommand() = default;
   void execute() override;
 };
