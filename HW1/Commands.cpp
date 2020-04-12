@@ -366,6 +366,7 @@ void ExternalCommand::execute() {
         _removeBackgroundSign(temp);
         new_command = string(temp);
     }
+    new_command = _trim(new_command);
 
     pid_t pid = fork();
     if( pid < 0){
@@ -851,7 +852,7 @@ void BackgroundCommand::execute() {
 void QuitCommand::execute() {
     if(num_arguments > 1){
         if(string(arguments[1]) == "kill"){
-            cout << "smash: sending SIGKILL signal to " << to_string(num_arguments) << " jobs:" <<endl;
+            cout << "smash: sending SIGKILL signal to " << jobs_list->getJobsSize() << " jobs:" <<endl;
             jobs_list->killAllJobs();
         }
     }
