@@ -589,10 +589,13 @@ void JobsList::killAllJobs() {
 }
 
 JobsList::JobEntry *JobsList::getJobById(int jobId) {
-    for(JobEntry currJob : jobs){
-        if(currJob.getJobId() == jobId){
-            //Found job
-            return &currJob;
+    vector<JobEntry>::iterator it = jobs.begin();
+    while(it != jobs.end()){
+        if(jobId == it->getJobId()){
+            return &(*it);
+        }
+        else{
+            it++;
         }
     }
     return nullptr;
