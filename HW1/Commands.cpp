@@ -92,6 +92,103 @@ void _printError(const string err){
 
 // TODO: Add your implementation for classes in Commands.h
 
+void CopyCommand::execute() {
+    if(num_arguments < 3 || num_arguments == 4 == arguments[3] != '&' || num_arguments > 4){
+        _printError("cp: invalid arguments");
+        return;
+    }
+    bool is_bg = false;
+    string new_command = command;
+    if(_isBackgroundComamnd(command.c_str())){
+        //Ends with &
+        is_bg = true;
+
+        char temp[COMMAND_ARGS_MAX_LENGTH];
+        strcpy(temp, command.c_str());
+        _removeBackgroundSign(temp);
+        new_command = string(temp);
+    }
+
+    int read_file = open(arguments[1], O_RDONLY);
+    if(read_file == -1){
+        perror("smash error: open failed");
+        return;
+    }
+    int write_file = open(arguments[2], O_WRONLY | O_CREAT | O_TRUNC, 0664);
+    if(write_file == -1){
+        perror("smash error: open failed");
+        if(close(read_file) == -1){
+            perror("smash error: close failed");
+        }
+        return;
+    }
+
+    //Create buffer to read data
+    vector<char> buffer(1024);
+
+    int pid = fork();
+
+    if( pid < 0){
+        perror("smash error: fork failed");
+        return;
+    }
+    else if(pid == 0) {
+        //Child process
+        setpgrp();
+
+        while(true){
+            ssize_t read_size = read(read_file, buffer.data(), buffer.size());
+            if(read_size == 0){
+                //Reach EOF
+                break;
+            }
+            else if(read_size == -1){
+                perror("smash error: read failed");
+                if(close(read_file) == -1 || close(write_file) == -1){
+                    perror("smash error: close failed");
+                }
+                return;
+            }
+
+            ssize_t size_wrrited = 0;
+            while(size_wrrited<read_size){
+                ssize_t write_res = write(write_file, buffer.data()+ size_wrrited, read_size - size_wrrited);
+                if(write_res == -1){
+                    perror("smash error: write failed");
+                    if(close(read_file) == -1 || close(write_file) == -1){
+                        perror("smash error: close failed");
+                    }
+                    return;
+                }
+                else{
+                    size_wrrited += write_res;
+                }
+            }
+            if(close(read_file) == -1 || close(write_file) == -1){
+                perror("smash error: close failed");
+            }
+            cout << "smash: " << arguments[1];
+        }
+
+    }
+    else{
+        if(is_bg){
+            jobs_list->addJob(command,pid, false);
+            return; //No need to wait...
+        }
+        else{
+            jobs_list->setFg(command, pid);
+            int res = waitpid(pid, nullptr, WUNTRACED);
+            if(res == -1){
+                perror("smash error: waitpid failed");
+                return;
+            }
+        }
+    }
+
+
+}
+
 void RedirectionCommand::execute() {
     bool is_bg = false;
     string new_command = command;
@@ -112,14 +209,14 @@ void RedirectionCommand::execute() {
     string file_path = new_command.substr(redirect+1+(int)isAppend);
     int file;
     if(isAppend){
-        file = open(file_path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0666);
+        file = open(file_path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0664);
         if(file == -1){
             perror("smash error: open failed");
             return;
         }
     }
     else {
-        file = open(file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        file = open(file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0664);
         if (file == -1) {
             perror("smash error: open failed");
             return;
@@ -146,10 +243,11 @@ void RedirectionCommand::execute() {
     }
     else{
         if(is_bg){
-            jobs_list->addJob(cmd,false, pid);
+            jobs_list->addJob(cmd,pid, false);
             return; //No need to wait...
         }
         else{
+            jobs_list->setFg(command, pid);
             int res = waitpid(pid, nullptr, WUNTRACED);
             if(res == -1){
                 perror("smash error: waitpid failed");
@@ -239,11 +337,12 @@ void PipeCommand::execute() {
             close(fd[0]);
             close(fd[1]);
             if(is_bg){
-                jobs_list->addJob(cmd1, false, pid);
-                jobs_list->addJob(cmd2,false, pid2);
+                jobs_list->addJob(cmd1, pid, false);
+                jobs_list->addJob(cmd2,pid2, false);
                 return; //No need to wait...
             }
             else{
+                jobs_list->setFg(command, pid2);
                 int res1 = waitpid(pid, nullptr, WUNTRACED);
                 int res2 = waitpid(pid2, nullptr, WUNTRACED);
                 if(res1 == -1 || res2 == -1){
@@ -282,11 +381,12 @@ void ExternalCommand::execute() {
     else{ //Parent
         if(is_bg){
             //Background command -> add to job list
-            jobs_list->addJob(command,false, pid);
+            jobs_list->addJob(command,pid, false);
             return;
         }
         else{
             //Running foreground -> wait to finish
+            jobs_list->setFg(command, pid);
             int res = waitpid(pid, nullptr, WUNTRACED);
             if(res == -1){
                 perror("smash error: waitpid failed");
@@ -300,10 +400,14 @@ void ExternalCommand::execute() {
 
 SmallShell::SmallShell() {
 // TODO: add your implementation
+    last_pwd = "";
+    prompt = "smash";
+    jobs_list = new JobsList();
 }
 
 SmallShell::~SmallShell() {
 // TODO: add your implementation
+    delete jobs_list;
 }
 
 
@@ -324,6 +428,49 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
     return new ExternalCommand(cmd_line);
   }
   */
+    string cmd_s = _trim(string(cmd_line));
+    if(cmd_s.find('|') != string::npos){
+        return new PipeCommand(cmd_line, jobs_list);
+    }
+    else if(cmd_s.find('>') != string::npos){
+        return new RedirectionCommand(cmd_line, jobs_list);
+    }
+    else if(cmd_s.find("chprompt")==0){
+        return new ChpromptCommand(cmd_line, prompt);
+    }
+    else if(cmd_s.find("showpid") == 0){
+        return new ShowPidCommand(cmd_line);
+    }
+    else if(cmd_s.find("pwd") == 0){
+        return new GetCurrDirCommand(cmd_line);
+    }
+    else if(cmd_s.find("cd") == 0){
+        return new ChangeDirCommand(cmd_line, last_pwd);
+    }
+    else if(cmd_s.find("jobs") == 0){
+        return new JobsCommand(cmd_line, jobs_list);
+    }
+    else if(cmd_s.find("kill") == 0){
+        return new KillCommand(cmd_line, jobs_list);
+    }
+    else if(cmd_s.find("fg") == 0){
+        return new ForegroundCommand(cmd_line, jobs_list);
+    }
+    else if(cmd_s.find("bg") == 0){
+        return new BackgroundCommand(cmd_line, jobs_list);
+    }
+    else if(cmd_s.find("quit") == 0){
+        return new QuitCommand(cmd_line, jobs_list);
+    }
+    else if(cmd_s.find("cp") == 0){
+        return new CopyCommand(cmd_line, jobs_list);
+    }
+    else if(cmd_s.find("timeout") == 0){
+
+    }
+    else{
+        return new ExternalCommand(cmd_line, jobs_list);
+    }
   return nullptr;
 }
 
@@ -333,6 +480,9 @@ void SmallShell::executeCommand(const char *cmd_line) {
   // Command* cmd = CreateCommand(cmd_line);
   // cmd->execute();
   // Please note that you must fork smash process for some commands (e.g., external commands....)
+  auto* cmd = CreateCommand(cmd_line);
+  cmd->execute();
+  delete cmd;
 }
 
 Command::Command(const char *cmd_line) {
@@ -398,7 +548,7 @@ void GetCurrDirCommand::execute() {
 
 
 
-void JobsList::addJob(string cmd, bool isStopped, pid_t pid) {
+void JobsList::addJob(string cmd, pid_t pid, bool isStopped) {
     removeFinishedJobs();
     max_id++;
     JobStat status = isStopped ? Stopped : Running;
@@ -498,7 +648,7 @@ void JobsList::removeFinishedJobs() {
     auto it = jobs.begin();
     while(it != jobs.end()){
         pid = it->getJobPid();
-        res = waitpid(pid, nullptr, WHOHANG);
+        res = waitpid(pid, nullptr, WNOHANG);
 
         if(res == -1){
             perror("smash error: waitpid failed");
@@ -540,6 +690,19 @@ void JobsList::fgJob(int jobId) {
     removeJobById(jobId);
 }
 
+void JobsList::setFg(string cmd, pid_t pid) {
+    fg_command = cmd;
+    fg_pid = pid;
+}
+
+string JobsList::getFgCmd() {
+    return fg_command;
+}
+
+pid_t JobsList::getFgPid() {
+    return fg_pid;
+}
+
 void JobsCommand::execute() {
     jobs_list->printJobsList();
 }
@@ -547,8 +710,8 @@ void JobsCommand::execute() {
 
 
 bool checkNumber(string s){
-    for(i=0 ; i<s.length() ; i++){
-        if(!isdigit(s[i])){
+    for(char i : s){
+        if(!isdigit(i)){
             return false;
         }
     }
@@ -690,4 +853,13 @@ void QuitCommand::execute() {
         }
     }
     exit(0);
+}
+
+void ChpromptCommand::execute() {
+    if(arguments[1] == nullptr){
+        prompt = "smash";
+    }
+    else{
+        prompt = arguments[1];
+    }
 }

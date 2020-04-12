@@ -59,7 +59,8 @@ class RedirectionCommand : public Command {
 
 class ChangeDirCommand : public BuiltInCommand {
 // TODO: Add your data members public:
-    string last_PWD;
+  string last_PWD;
+public:
   ChangeDirCommand(const char *cmd_line, string plastPwd) : BuiltInCommand(cmd_line), last_PWD(plastPwd){};
   virtual ~ChangeDirCommand() = default;
   void execute() override;
@@ -68,7 +69,7 @@ class ChangeDirCommand : public BuiltInCommand {
 // This is the PWD command
 class GetCurrDirCommand : public BuiltInCommand {
  public:
-  GetCurrDirCommand(const char* cmd_line) : BuiltInCommand(cmd_line){};
+  GetCurrDirCommand(const char* cmd_line) : BuiltInCommand(cmd_line) {};
   virtual ~GetCurrDirCommand() = default;
   void execute() override;
 };
@@ -83,6 +84,7 @@ class ShowPidCommand : public BuiltInCommand {
 class QuitCommand : public BuiltInCommand {
     JobsList* jobs_list;
 // TODO: Add your data members public:
+public:
   QuitCommand(const char* cmd_line, JobsList* jobs) : BuiltInCommand(cmd_line), jobs_list(jobs) {};
   virtual ~QuitCommand() = default;
   void execute() override;
@@ -138,12 +140,14 @@ class JobsList {
  // TODO: Add your data members
 private:
     int max_id;
+    string fg_command;
+    pid_t fg_pid;
     vector<JobEntry> jobs;
 
  public:
-    JobsList() : max_id(0) {};
+    JobsList() : max_id(0), fg_command(""), fg_pid(-1) {};
   ~JobsList() = default;
-  void addJob(string cmd, bool isStopped = false, pid_t pid);
+  void addJob(string cmd, pid_t pid, bool isStopped = false);
   void printJobsList();
   void killAllJobs();
   void removeFinishedJobs();
@@ -153,6 +157,9 @@ private:
   JobEntry *getLastStoppedJob();
   int getJobsSize();
   void fgJob(int jobId);
+  void setFg(string cmd, pid_t pid);
+  string getFgCmd();
+  pid_t getFgPid();
   // TODO: Add extra methods or modify exisitng ones as needed
 };
 
@@ -190,12 +197,22 @@ class BackgroundCommand : public BuiltInCommand {
   void execute() override;
 };
 
+class ChpromptCommand : public BuiltInCommand {
+    // TODO: Add your data members
+    string& prompt;
+public:
+    ChpromptCommand(const char* cmd_line, string& prompt) : BuiltInCommand(cmd_line), prompt(prompt){};
+    virtual ~ChpromptCommand() = default;
+    void execute() override;
+};
+
 
 // TODO: should it really inhirit from BuiltInCommand ?
-class CopyCommand : public BuiltInCommand {
+class CopyCommand : public Command {
+    JobsList* jobs_list;
  public:
-  CopyCommand(const char* cmd_line);
-  virtual ~CopyCommand() {}
+  CopyCommand(const char* cmd_line, JobsList* jobs) : Command(cmd_line), jobs_list(jobs) {};
+  virtual ~CopyCommand() = default;
   void execute() override;
 };
 
@@ -205,9 +222,11 @@ class CopyCommand : public BuiltInCommand {
 class SmallShell {
  private:
   // TODO: Add your data members
+  string prompt;
+  string last_pwd;
+  JobsList* jobs_list;
   SmallShell();
  public:
-  JobsList* jobs_list;
 
   Command *CreateCommand(const char* cmd_line);
   SmallShell(SmallShell const&)      = delete; // disable copy ctor
@@ -221,6 +240,12 @@ class SmallShell {
   ~SmallShell();
   void executeCommand(const char* cmd_line);
   // TODO: add extra methods as needed
+  string getPrompt(){
+      return prompt;
+  }
+  JobsList* getJobsList(){
+      return jobs_list;
+  }
 };
 
 #endif //SMASH_COMMAND_H_
