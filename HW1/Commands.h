@@ -10,12 +10,16 @@ class Command {
 // TODO: Add your data members
 protected:
     string command;
-    char* arguments[COMMAND_MAX_ARGS];
+    char* arguments[COMMAND_ARGS_MAX_LENGTH];
     int num_arguments;
 
  public:
   explicit Command(const char* cmd_line);
-  virtual ~Command() = default;
+  virtual ~Command(){
+      for(int i = 0; i<num_arguments; i++){
+          free(arguments[i]);
+      }
+  }
   virtual void execute() = 0;
   //virtual void prepare();
   //virtual void cleanup();

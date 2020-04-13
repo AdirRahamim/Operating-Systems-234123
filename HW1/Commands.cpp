@@ -110,6 +110,7 @@ void CopyCommand::execute() {
     }
 
     int read_file = open(arguments[1], O_RDONLY);
+    //00int read_file = open("/home/adir/Downloads/טכניון/Operating-Systems-234123/HW1/test_src_1.txt", O_RDONLY);
     if(read_file == -1){
         perror("smash error: open failed");
         return;
@@ -134,7 +135,7 @@ void CopyCommand::execute() {
     }
     else if(pid == 0) {
         //Child process
-        setpgrp();
+        //setpgrp();
 
         while(true){
             ssize_t read_size = read(read_file, buffer.data(), buffer.size());
@@ -164,12 +165,12 @@ void CopyCommand::execute() {
                     size_wrrited += write_res;
                 }
             }
-            if(close(read_file) == -1 || close(write_file) == -1){
-                perror("smash error: close failed");
-            }
-            cout << "smash: " << arguments[1];
         }
-
+        if(close(read_file) == -1 || close(write_file) == -1){
+            perror("smash error: close failed");
+        }
+        cout << "smash: " << arguments[1] << " was copied to " << arguments[2] << endl;
+        exit(0);
     }
     else{
         if(is_bg){
@@ -183,6 +184,7 @@ void CopyCommand::execute() {
                 perror("smash error: waitpid failed");
                 return;
             }
+            jobs_list->setFg("", -1);
         }
     }
 
@@ -257,6 +259,7 @@ void RedirectionCommand::execute() {
                 perror("smash error: close failed");
                 return;
             }
+            jobs_list->setFg("", -1);
         }
     }
 }
@@ -342,13 +345,14 @@ void PipeCommand::execute() {
                 return; //No need to wait...
             }
             else{
-                jobs_list->setFg(command, pid2);
+                jobs_list->setFg(command, pid);
                 int res1 = waitpid(pid, nullptr, WUNTRACED);
                 int res2 = waitpid(pid2, nullptr, WUNTRACED);
                 if(res1 == -1 || res2 == -1){
                     perror("smash error: waitpid failed");
                     return;
                 }
+                jobs_list->setFg("",-1);
             }
         }
     }
@@ -377,7 +381,7 @@ void ExternalCommand::execute() {
         setpgrp();
         execl(BASH_PATH, "bash", "-c", new_command.c_str(), nullptr);
         perror("smash error: execl failed");
-        return;
+        exit(0);
     }
     else{ //Parent
         if(is_bg){
@@ -393,6 +397,7 @@ void ExternalCommand::execute() {
                 perror("smash error: waitpid failed");
                 return;
             }
+            jobs_list->setFg("",-1);
         }
     }
 
@@ -411,6 +416,11 @@ SmallShell::~SmallShell() {
     delete jobs_list;
 }
 
+void free_char_array(char* array[], int num_elements){
+    for(int i = 0; i<num_elements; i++){
+        free(array[i]);
+    }
+}
 
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
@@ -429,50 +439,68 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
     return new ExternalCommand(cmd_line);
   }
   */
+    char* arguments[COMMAND_ARGS_MAX_LENGTH];
+    int num_args = _parseCommandLine(cmd_line, arguments);
+    string first = string(arguments[0]);
     string cmd_s = _trim(string(cmd_line));
+
     if(cmd_s.find('|') != string::npos){
+        free_char_array(arguments, num_args);
         return new PipeCommand(cmd_line, jobs_list);
     }
     else if(cmd_s.find('>') != string::npos){
+        free_char_array(arguments, num_args);
         return new RedirectionCommand(cmd_line, jobs_list);
     }
-    else if(cmd_s.find("chprompt")==0){
+    else if( first == "chprompt"){
+        free_char_array(arguments, num_args);
         return new ChpromptCommand(cmd_line, prompt);
     }
-    else if(cmd_s.find("showpid") == 0){
+    else if(first == "showpid"){
+        free_char_array(arguments, num_args);
         return new ShowPidCommand(cmd_line);
     }
-    else if(cmd_s.find("pwd") == 0){
+    else if(first == "pwd"){
+        free_char_array(arguments, num_args);
         return new GetCurrDirCommand(cmd_line);
     }
-    else if(cmd_s.find("cd") == 0){
+    else if(first == "cd"){
+        free_char_array(arguments, num_args);
         return new ChangeDirCommand(cmd_line, last_pwd);
     }
-    else if(cmd_s.find("jobs") == 0){
+    else if(first == "jobs"){
+        free_char_array(arguments, num_args);
         return new JobsCommand(cmd_line, jobs_list);
     }
-    else if(cmd_s.find("kill") == 0){
+    else if(first == "kill"){
+        free_char_array(arguments, num_args);
         return new KillCommand(cmd_line, jobs_list);
     }
-    else if(cmd_s.find("fg") == 0){
+    else if(first == "fg"){
+        free_char_array(arguments, num_args);
         return new ForegroundCommand(cmd_line, jobs_list);
     }
-    else if(cmd_s.find("bg") == 0){
+    else if(first == "bg"){
+        free_char_array(arguments, num_args);
         return new BackgroundCommand(cmd_line, jobs_list);
     }
-    else if(cmd_s.find("quit") == 0){
+    else if(first == "quit"){
+        free_char_array(arguments, num_args);
         return new QuitCommand(cmd_line, jobs_list);
     }
-    else if(cmd_s.find("cp") == 0){
+    else if(first == "cp"){
+        free_char_array(arguments, num_args);
         return new CopyCommand(cmd_line, jobs_list);
     }
-    else if(cmd_s.find("timeout") == 0){
-
+    else if(first == "timeout"){
+        free_char_array(arguments, num_args);
     }
     else{
+        free_char_array(arguments, num_args);
         return new ExternalCommand(cmd_line, jobs_list);
     }
-  return nullptr;
+    free_char_array(arguments, num_args);
+    return nullptr;
 }
 
 void SmallShell::executeCommand(const char *cmd_line) {
@@ -482,6 +510,9 @@ void SmallShell::executeCommand(const char *cmd_line) {
   // cmd->execute();
   // Please note that you must fork smash process for some commands (e.g., external commands....)
   auto* cmd = CreateCommand(cmd_line);
+  if(cmd == nullptr){
+      return;
+  }
   cmd->execute();
   delete cmd;
 }
@@ -500,6 +531,9 @@ BuiltInCommand::BuiltInCommand(const char *cmd_line) : Command(cmd_line) {
 }
 
 void ChangeDirCommand::execute() {
+    if(num_arguments == 1){
+        return;
+    }
     char* path = this->arguments[1];
     if(this->num_arguments>2){
         _printError("cd: too many arguments");
@@ -717,8 +751,9 @@ void JobsCommand::execute() {
 
 
 bool checkNumber(string s){
-    for(char i : s){
-        if(!isdigit(i)){
+    for(unsigned int i = 0 ; i < s.length() ; i++){
+        if((i == 0) && (s[i] == '-')) continue;
+        if(!isdigit(s[i])){
             return false;
         }
     }
@@ -759,7 +794,7 @@ void KillCommand::execute() {
         perror("smash error: kill failed");
     }
     else{
-        cout << "signal number " << (-1) * signal_num << " was sent to pid " << pid << endl;
+        cout << "signal number " << signal_num << " was sent to pid " << pid << endl;
     }
 }
 

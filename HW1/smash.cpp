@@ -16,7 +16,7 @@ int main(int argc, char* argv[]) {
 
     //TODO: setup sig alarm handler
 
-    ifstream file("/home/adir/Downloads/טכניון/Operating-Systems-234123/HW1/test_input1.txt");
+   ifstream file("/home/adir/Downloads/טכניון/Operating-Systems-234123/HW1/test_input1.txt");
 
     SmallShell& smash = SmallShell::getInstance();
     while(true) {
