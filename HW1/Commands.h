@@ -101,11 +101,11 @@ class JobsList {
     class JobEntry {
    // TODO: Add your data members
 
-    string cmd_line;
-    int id_job;
-    pid_t pid_job;
-    time_t start_time;
-    JobStat status;
+        string cmd_line;
+        int id_job;
+        pid_t pid_job;
+        time_t start_time;
+        JobStat status;
 
   public:
       JobEntry(string cmd_line, int id, pid_t pid, time_t time, JobStat status) : cmd_line(cmd_line), id_job(id),
@@ -151,7 +151,7 @@ private:
  public:
     JobsList() : max_id(0), fg_command(""), fg_pid(-1) {};
   ~JobsList() = default;
-  void addJob(string cmd, pid_t pid, bool isStopped = false);
+  int addJob(string cmd, pid_t pid, bool isStopped = false);
   void printJobsList();
   void killAllJobs();
   void removeFinishedJobs();
@@ -223,15 +223,59 @@ class CopyCommand : public Command {
 // TODO: add more classes if needed 
 // maybe chprompt , timeout ?
 
+class TimeoutCommand : public Command {
+    JobsList* jobs_list;
+public:
+    TimeoutCommand(const char* cmd_line, JobsList* jobs) : Command(cmd_line), jobs_list(jobs) {};
+    virtual ~TimeoutCommand() = default;
+    void execute() override;
+};
+
+
 class SmallShell {
+public:
+    class TimeoutJobs{
+        string cmd;
+        int job_id;
+        time_t start_time;
+        int duration;
+        pid_t job_pid;
+    public:
+        TimeoutJobs(string cmd, int job_id, int duration, pid_t pid, bool isBg) : cmd(cmd), job_id(job_id) , duration(duration), job_pid(pid){
+            start_time = time(nullptr);
+        }
+        ~TimeoutJobs() = default;
+
+        int getDuration(){
+            return duration;
+        }
+
+        time_t getStartTime(){
+            return start_time;
+        }
+
+        string getCmd(){
+            return cmd;
+        }
+
+        pid_t getPid(){
+            return job_pid;
+        }
+
+        int getJobId(){
+            return job_id;
+        }
+
+    };
+
  private:
   // TODO: Add your data members
   string prompt;
   string last_pwd;
   JobsList* jobs_list;
   SmallShell();
+  vector<TimeoutJobs> timeout_jobs;
  public:
-
   Command *CreateCommand(const char* cmd_line);
   SmallShell(SmallShell const&)      = delete; // disable copy ctor
   void operator=(SmallShell const&)  = delete; // disable = operator
@@ -249,6 +293,15 @@ class SmallShell {
   }
   JobsList* getJobsList(){
       return jobs_list;
+  }
+
+  void addTimeoutJob(string cmd, int job_id, int duration, pid_t pid){
+      TimeoutJobs newJob = TimeoutJobs(cmd, job_id, duration , pid);
+      timeout_jobs.push_back(newJob);
+  }
+
+  vector<TimeoutJobs>& getTimeoutJobs(){
+      return timeout_jobs;
   }
 };
 

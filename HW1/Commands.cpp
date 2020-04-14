@@ -86,6 +86,16 @@ void _removeBackgroundSign(char* cmd_line) {
   cmd_line[str.find_last_not_of(WHITESPACE, idx) + 1] = 0;
 }
 
+bool checkNumber(string s){
+    for(unsigned int i = 0 ; i < s.length() ; i++){
+        if((i == 0) && (s[i] == '-')) continue;
+        if(!isdigit(s[i])){
+            return false;
+        }
+    }
+    return true;
+}
+
 void _printError(const string err){
     cout << "smash error: " << err << endl;
 }
@@ -191,6 +201,78 @@ void CopyCommand::execute() {
 
 }
 
+void TimeoutCommand::execute() {
+
+    if(num_arguments == 1){
+        _printError("timeout: invalid arguments");
+        return;
+    }
+    else if(!checkNumber(arguments[1])){
+        _printError("timeout: invalid arguments");
+        return;
+    }
+
+    int timeout_time = atoi(arguments[1]);
+
+    string new_command;
+
+    for(int i = 2 ; i<num_arguments ; i++){
+        new_command + " " + string(arguments[i]);
+    }
+    _trim(new_command);
+
+    bool is_bg = false;
+    if(_isBackgroundComamnd(command.c_str())){
+        //Ends with &
+        is_bg = true;
+
+        char temp[COMMAND_ARGS_MAX_LENGTH];
+        strcpy(temp, new_command.c_str());
+        _removeBackgroundSign(temp);
+        new_command = string(temp);
+    }
+
+    SmallShell& temp_smash = SmallShell::getInstance();
+    auto _command = temp_smash.CreateCommand(cmd.c_str());
+
+    int pid = fork();
+
+    if( pid < 0){
+        perror("smash error: fork failed");
+        return;
+    }
+    else if(pid == 0){
+        //Child
+        setpgrp();
+        _command->execute();
+        exit(0);
+    }
+    else{
+        //Parent
+        if(is_bg){
+            int job_id = jobs_list->addJob(cmd,pid, false);
+            temp_smash.addTimeoutJob(command, job_id, timeout_time, pid);
+            return; //No need to wait...
+        }
+        else{
+            jobs_list->setFg(command, pid);
+            temp_smash.addTimeoutJob(command, -1, timeout_time, pid);
+            int res = waitpid(pid, nullptr, WUNTRACED);
+            if(res == -1){
+                perror("smash error: waitpid failed");
+                return;
+            }
+            if(close(file) == -1){
+                perror("smash error: close failed");
+                return;
+            }
+            jobs_list->setFg("", -1);
+        }
+
+    }
+
+}
+
 void RedirectionCommand::execute() {
     bool is_bg = false;
     string new_command = command;
@@ -236,7 +318,7 @@ void RedirectionCommand::execute() {
     else if(pid == 0){
         //Child process
         setpgrp();
-        if(dup2(file,STDERR_FILENO) == -1){
+        if(dup2(file,STDOUT_FILENO) == -1){
             perror("smash error: dup2 failed");
             return;
         }
@@ -439,8 +521,11 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
     return new ExternalCommand(cmd_line);
   }
   */
+    char cmd[COMMAND_ARGS_MAX_LENGTH];
+    strcpy(cmd, cmd_line);
+    _removeBackgroundSign(cmd);
     char* arguments[COMMAND_ARGS_MAX_LENGTH];
-    int num_args = _parseCommandLine(cmd_line, arguments);
+    int num_args = _parseCommandLine(cmd, arguments);
     string first = string(arguments[0]);
     string cmd_s = _trim(string(cmd_line));
 
@@ -580,15 +665,13 @@ void GetCurrDirCommand::execute() {
     free(temp);
 }
 
-
-
-
-void JobsList::addJob(string cmd, pid_t pid, bool isStopped) {
+int JobsList::addJob(string cmd, pid_t pid, bool isStopped) {
     removeFinishedJobs();
     max_id++;
     JobStat status = isStopped ? Stopped : Running;
     JobEntry newEntry = JobEntry(cmd, max_id, pid, time(nullptr), status);
     jobs.push_back(newEntry);
+    return max_id;
 }
 
 void JobsList::printJobsList() {
@@ -746,18 +829,6 @@ pid_t JobsList::getFgPid() {
 
 void JobsCommand::execute() {
     jobs_list->printJobsList();
-}
-
-
-
-bool checkNumber(string s){
-    for(unsigned int i = 0 ; i < s.length() ; i++){
-        if((i == 0) && (s[i] == '-')) continue;
-        if(!isdigit(s[i])){
-            return false;
-        }
-    }
-    return true;
 }
 
 void KillCommand::execute() {
