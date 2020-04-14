@@ -95,6 +95,68 @@ public:
 };
 
 
+class TimeoutList{
+public:
+    class TimeoutJobs{
+        string cmd;
+        int job_id;
+        time_t start_time;
+        int duration;
+        pid_t job_pid;
+    public:
+        TimeoutJobs(string cmd, int job_id, int duration, pid_t pid) : cmd(cmd), job_id(job_id) , duration(duration), job_pid(pid){
+            start_time = time(nullptr);
+        }
+        ~TimeoutJobs() = default;
+
+        int getDuration(){
+            return duration;
+        }
+
+        time_t getStartTime(){
+            return start_time;
+        }
+
+        string getCmd(){
+            return cmd;
+        }
+
+        pid_t getPid(){
+            return job_pid;
+        }
+
+        int getJobId(){
+            return job_id;
+        }
+
+    };
+private:
+    vector<TimeoutJobs> timeout_vec;
+public:
+
+    void addJob(string cmd, int job_id, int duration, pid_t pid){
+        TimeoutJobs job = TimeoutJobs(cmd, job_id, duration, pid);
+        timeout_vec.push_back(job);
+    }
+
+    void removeTimeoutJobs(){
+        auto it = timeout_vec.begin();
+        while(it != timeout_vec.end()){
+            if(it->getDuration() == (time(nullptr) - it->getStartTime())){
+                cout << "smash: " << it->getCmd() << " timed out!" << endl;
+                if(kill(it->getPid(), SIGKILL) == -1){
+                    perror("smash error: kill failed");
+                }
+                it = timeout_vec.erase(it);
+            }
+            else{
+                it++;
+            }
+        }
+    }
+
+};
+
 class JobsList {
  public:
     enum JobStat {Running, Stopped};
@@ -225,56 +287,22 @@ class CopyCommand : public Command {
 
 class TimeoutCommand : public Command {
     JobsList* jobs_list;
+    TimeoutList* timeout_list;
 public:
-    TimeoutCommand(const char* cmd_line, JobsList* jobs) : Command(cmd_line), jobs_list(jobs) {};
+    TimeoutCommand(const char* cmd_line, JobsList* jobs, TimeoutList* timeout_list) : Command(cmd_line), jobs_list(jobs),
+        timeout_list(timeout_list) {};
     virtual ~TimeoutCommand() = default;
     void execute() override;
 };
 
 
 class SmallShell {
-public:
-    class TimeoutJobs{
-        string cmd;
-        int job_id;
-        time_t start_time;
-        int duration;
-        pid_t job_pid;
-    public:
-        TimeoutJobs(string cmd, int job_id, int duration, pid_t pid, bool isBg) : cmd(cmd), job_id(job_id) , duration(duration), job_pid(pid){
-            start_time = time(nullptr);
-        }
-        ~TimeoutJobs() = default;
-
-        int getDuration(){
-            return duration;
-        }
-
-        time_t getStartTime(){
-            return start_time;
-        }
-
-        string getCmd(){
-            return cmd;
-        }
-
-        pid_t getPid(){
-            return job_pid;
-        }
-
-        int getJobId(){
-            return job_id;
-        }
-
-    };
-
- private:
-  // TODO: Add your data members
+    // TODO: Add your data members
   string prompt;
   string last_pwd;
   JobsList* jobs_list;
-  SmallShell();
-  vector<TimeoutJobs> timeout_jobs;
+    TimeoutList* timeout_list;
+    SmallShell();
  public:
   Command *CreateCommand(const char* cmd_line);
   SmallShell(SmallShell const&)      = delete; // disable copy ctor
@@ -295,13 +323,8 @@ public:
       return jobs_list;
   }
 
-  void addTimeoutJob(string cmd, int job_id, int duration, pid_t pid){
-      TimeoutJobs newJob = TimeoutJobs(cmd, job_id, duration , pid);
-      timeout_jobs.push_back(newJob);
-  }
-
-  vector<TimeoutJobs>& getTimeoutJobs(){
-      return timeout_jobs;
+  TimeoutList* getTimeoutList(){
+      return timeout_list;
   }
 };
 

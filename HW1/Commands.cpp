@@ -70,6 +70,9 @@ bool _isBackgroundComamnd(const char* cmd_line) {
 
 void _removeBackgroundSign(char* cmd_line) {
   const string str(cmd_line);
+  if(str == ""){
+      return;
+  }
   // find last character other than spaces
   unsigned int idx = str.find_last_not_of(WHITESPACE);
   // if all characters are spaces then return
@@ -217,7 +220,7 @@ void TimeoutCommand::execute() {
     string new_command;
 
     for(int i = 2 ; i<num_arguments ; i++){
-        new_command + " " + string(arguments[i]);
+        new_command = new_command + " " + string(arguments[i]);
     }
     _trim(new_command);
 
@@ -233,7 +236,7 @@ void TimeoutCommand::execute() {
     }
 
     SmallShell& temp_smash = SmallShell::getInstance();
-    auto _command = temp_smash.CreateCommand(cmd.c_str());
+    auto _command = temp_smash.CreateCommand(new_command.c_str());
 
     int pid = fork();
 
@@ -249,23 +252,21 @@ void TimeoutCommand::execute() {
     }
     else{
         //Parent
+        alarm(timeout_time);
         if(is_bg){
-            int job_id = jobs_list->addJob(cmd,pid, false);
-            temp_smash.addTimeoutJob(command, job_id, timeout_time, pid);
+            int job_id = jobs_list->addJob(command,pid, false);
+            timeout_list->addJob(command, job_id, timeout_time, pid);
             return; //No need to wait...
         }
         else{
             jobs_list->setFg(command, pid);
-            temp_smash.addTimeoutJob(command, -1, timeout_time, pid);
+            timeout_list->addJob(command, -1, timeout_time, pid);
             int res = waitpid(pid, nullptr, WUNTRACED);
             if(res == -1){
                 perror("smash error: waitpid failed");
                 return;
             }
-            if(close(file) == -1){
-                perror("smash error: close failed");
-                return;
-            }
+
             jobs_list->setFg("", -1);
         }
 
@@ -491,11 +492,14 @@ SmallShell::SmallShell() {
     last_pwd = "";
     prompt = "smash";
     jobs_list = new JobsList();
+    timeout_list = new TimeoutList();
 }
 
 SmallShell::~SmallShell() {
 // TODO: add your implementation
     delete jobs_list;
+    delete timeout_list;
+
 }
 
 void free_char_array(char* array[], int num_elements){
@@ -526,6 +530,9 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
     _removeBackgroundSign(cmd);
     char* arguments[COMMAND_ARGS_MAX_LENGTH];
     int num_args = _parseCommandLine(cmd, arguments);
+    if(num_args == 0){
+        return nullptr;
+    }
     string first = string(arguments[0]);
     string cmd_s = _trim(string(cmd_line));
 
@@ -579,6 +586,7 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
     }
     else if(first == "timeout"){
         free_char_array(arguments, num_args);
+        return new TimeoutCommand(cmd_line, jobs_list, timeout_list);
     }
     else{
         free_char_array(arguments, num_args);

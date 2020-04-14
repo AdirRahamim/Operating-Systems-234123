@@ -16,7 +16,7 @@ int main(int argc, char* argv[]) {
     if(signal(SIGINT , ctrlCHandler)==SIG_ERR) {
         perror("smash error: failed to set ctrl-C handler");
     }
-    if(sigaction(SIG_ALRM , &act, nullptr)==SIG_ERR) {
+    if(sigaction(SIGALRM , &act, nullptr) == -1) {
         perror("smash error: failed to set ctrl-C handler");
     }
 
