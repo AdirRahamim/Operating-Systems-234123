@@ -190,13 +190,13 @@ void CopyCommand::execute() {
             return; //No need to wait...
         }
         else{
-            jobs_list->setFg(command, pid);
+            jobs_list->setFg(command, pid, -1);
             int res = waitpid(pid, nullptr, WUNTRACED);
             if(res == -1){
                 perror("smash error: waitpid failed");
                 return;
             }
-            jobs_list->setFg("", -1);
+            jobs_list->setFg("", -1, -1);
         }
     }
 
@@ -221,7 +221,7 @@ void TimeoutCommand::execute() {
     for(int i = 2 ; i<num_arguments ; i++){
         new_command = new_command + " " + string(arguments[i]);
     }
-    _trim(new_command);
+    new_command = _trim(new_command);
 
     bool is_bg = false;
     if(_isBackgroundComamnd(command.c_str())){
@@ -258,7 +258,7 @@ void TimeoutCommand::execute() {
             return; //No need to wait...
         }
         else{
-            jobs_list->setFg(command, pid);
+            jobs_list->setFg(command, pid, -1);
             timeout_list->addJob(command, -1, timeout_time, pid);
             int res = waitpid(pid, nullptr, WUNTRACED);
             if(res == -1){
@@ -266,12 +266,13 @@ void TimeoutCommand::execute() {
                 return;
             }
 
-            jobs_list->setFg("", -1);
+            jobs_list->setFg("", -1 , -1);
         }
 
     }
 
 }
+
 
 void RedirectionCommand::execute() {
     bool is_bg = false;
@@ -290,7 +291,11 @@ void RedirectionCommand::execute() {
     int redirect = new_command.find('>');
     bool isAppend = new_command[redirect+1] == '>';
     string cmd = new_command.substr(0,redirect);
+    if(is_bg){
+        cmd = cmd + " &";
+    }
     string file_path = new_command.substr(redirect+1+(int)isAppend);
+    file_path = _trim(file_path);
     int file;
     if(isAppend){
         file = open(file_path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0664);
@@ -309,47 +314,30 @@ void RedirectionCommand::execute() {
     SmallShell& temp_smash = SmallShell::getInstance();
     auto _command = temp_smash.CreateCommand(cmd.c_str());
 
-    int pid = fork();
+    int stdoutCopy = dup(STDOUT_FILENO);
 
-    if( pid < 0){
-        perror("smash error: fork failed");
+    if(dup2(file,STDOUT_FILENO) == -1){
+        perror("smash error: dup2 failed");
         return;
     }
-    else if(pid == 0){
-        //Child process
-        setpgrp();
-        if(dup2(file,STDOUT_FILENO) == -1){
-            perror("smash error: dup2 failed");
-            return;
-        }
-        _command->execute();
-        exit(0);
+    _command->execute();
+
+    if(dup2(stdoutCopy, STDOUT_FILENO) == -1){
+        perror("smash error: dup2 failed");
+        return;
     }
-    else{
-        if(is_bg){
-            jobs_list->addJob(cmd,pid, false);
-            return; //No need to wait...
-        }
-        else{
-            jobs_list->setFg(command, pid);
-            int res = waitpid(pid, nullptr, WUNTRACED);
-            if(res == -1){
-                perror("smash error: waitpid failed");
-                return;
-            }
-            if(close(file) == -1){
-                perror("smash error: close failed");
-                return;
-            }
-            jobs_list->setFg("", -1);
-        }
+    if(close(file) == -1){
+        perror("smash error: close failed");
+        return;
     }
 }
+
+
 
 void PipeCommand::execute() {
     bool is_bg = false;
     string new_command = command;
-    if(_isBackgroundComamnd(command.c_str())){
+    if (_isBackgroundComamnd(command.c_str())) {
         //Ends with &
         is_bg = true;
 
@@ -361,83 +349,107 @@ void PipeCommand::execute() {
 
     //Produce first and second command
     int pipeIndex = new_command.find('|');
-    bool isStderrPipe = new_command[pipeIndex+1] == '&';
-    string cmd1 = new_command.substr(0,pipeIndex);
-    string cmd2 = new_command.substr(pipeIndex+1+(int)isStderrPipe);
+    bool isStderrPipe = new_command[pipeIndex + 1] == '&';
+    string cmd1 = new_command.substr(0, pipeIndex);
+    string cmd2 = new_command.substr(pipeIndex + 1 + (int) isStderrPipe);
 
-    SmallShell& temp_smash = SmallShell::getInstance();
+    SmallShell &temp_smash = SmallShell::getInstance();
     auto command1 = temp_smash.CreateCommand(cmd1.c_str());
     auto command2 = temp_smash.CreateCommand(cmd2.c_str());
 
-    //Create pipe
-    int fd[2];
-    if(pipe(fd) == -1){
-        perror("smash error: pipe failed");
-        return;
-    }
-
     pid_t pid = fork();
-    if( pid < 0){
+    if (pid < 0) {
         perror("smash error: fork failed");
         return;
-    }
-    else if(pid == 0){
-        //Child process
+    } else if (pid == 0) {
+        //Child
         setpgrp();
-        if(isStderrPipe){
-            if(dup2(fd[1],STDERR_FILENO) == -1){
-                perror("smash error: dup2 failed");
-                return;
-            }
-        }
-        else{
-            if(dup2(fd[1],STDOUT_FILENO) == -1){
-                perror("smash error: dup2 failed");
-                return;
-            }
-        }
-        close(fd[0]);
-        close(fd[1]);
-        command1->execute();
-        exit(0);
-    }
-    else{
-        //Parent process
-        int pid2 = fork();
-        if( pid2 < 0){
-            perror("smash error: fork failed");
+
+
+        //Create pipe
+        int fd[2];
+        if (pipe(fd) == -1) {
+            perror("smash error: pipe failed");
             return;
         }
-        else if(pid2 == 0){
-            if(dup2(fd[0],STDIN_FILENO) == -1){
-                perror("smash error: dup2 failed");
-                return;
+
+        pid_t pid_cmd1 = fork();
+        if (pid_cmd1 < 0) {
+            perror("smash error: fork failed");
+            return;
+        } else if (pid_cmd1 == 0) {
+
+            //Child command 1
+
+            setpgrp();
+
+            if (isStderrPipe) {
+                if (dup2(fd[1], STDERR_FILENO) == -1) {
+                    perror("smash error: dup2 failed");
+                    return;
+                }
+            } else {
+                if (dup2(fd[1], STDOUT_FILENO) == -1) {
+                    perror("smash error: dup2 failed");
+                    return;
+                }
             }
             close(fd[0]);
             close(fd[1]);
-            command2->execute();
+            command1->execute();
             exit(0);
-        }
-        else{
-            close(fd[0]);
-            close(fd[1]);
-            if(is_bg){
-                jobs_list->addJob(cmd1, pid, false);
-                jobs_list->addJob(cmd2,pid2, false);
-                return; //No need to wait...
+        } else {
+
+            //Parent command 1
+
+            pid_t pid_cmd2 = fork();
+
+            if (pid_cmd2 < 0) {
+                perror("smash error: fork failed");
+                return;
+            } else if (pid_cmd2 == 0) {
+
+                if (dup2(fd[0], STDIN_FILENO) == -1) {
+                    perror("smash error: dup2 failed");
+                    return;
+                }
+                close(fd[1]);
+                close(fd[0]);
+                command2->execute();
+                exit(0);
             }
             else{
-                jobs_list->setFg(command, pid);
-                int res1 = waitpid(pid, nullptr, WUNTRACED);
-                int res2 = waitpid(pid2, nullptr, WUNTRACED);
-                if(res1 == -1 || res2 == -1){
+                close(fd[0]);
+                close(fd[1]);
+
+                int res1 = waitpid(pid_cmd1, nullptr, WUNTRACED);
+                int res2= waitpid(pid_cmd2, nullptr, WUNTRACED);
+                if (res1 == -1 || res2 == -1) {
                     perror("smash error: waitpid failed");
                     return;
                 }
-                jobs_list->setFg("",-1);
+
+                exit(0);
             }
         }
+
+    } else {
+        //Parent
+
+        if (is_bg) {
+            jobs_list->addJob(command, pid, false);
+            return; //No need to wait...
+        } else {
+            jobs_list->setFg(command, pid, -1);
+            int res = waitpid(pid, nullptr, WUNTRACED);
+            if (res == -1) {
+                perror("smash error: waitpid failed");
+                return;
+            }
+            jobs_list->setFg("", -1, -1);
+        }
     }
+
 }
 
 void ExternalCommand::execute() {
@@ -473,13 +485,13 @@ void ExternalCommand::execute() {
         }
         else{
             //Running foreground -> wait to finish
-            jobs_list->setFg(command, pid);
+            jobs_list->setFg(command, pid, -1);
             int res = waitpid(pid, nullptr, WUNTRACED);
             if(res == -1){
                 perror("smash error: waitpid failed");
                 return;
             }
-            jobs_list->setFg("",-1);
+            jobs_list->setFg("",-1, -1);
         }
     }
 
@@ -807,8 +819,9 @@ void JobsList::fgJob(int jobId) {
 
     pid_t job_pid = job->getJobPid();
 
-    setFg(job->getCmd(), job_pid);
-    removeJobById(jobId);
+    setFg(job->getCmd(), job_pid, job->getJobId());
+    resetTime(jobId);
+    setBgToFg(true);
     if(kill(job_pid, SIGCONT) == -1){
         perror("smash error: kill failed");
     }
@@ -818,12 +831,14 @@ void JobsList::fgJob(int jobId) {
             perror("smash error: waitpid failed");
         }
     }
-    setFg("", -1);
+    setFg("", -1, -1);
+    setBgToFg(false);
 }
 
-void JobsList::setFg(string cmd, pid_t pid) {
+void JobsList::setFg(string cmd, pid_t pid, int jobId) {
     fg_command = cmd;
     fg_pid = pid;
+    fgId = jobId;
 }
 
 string JobsList::getFgCmd() {
@@ -832,6 +847,40 @@ string JobsList::getFgCmd() {
 
 pid_t JobsList::getFgPid() {
     return fg_pid;
+}
+
+void JobsList::bgJob(int jobId) {
+    JobEntry* job = getJobById(jobId);
+    cout << job->getCmd() << " : " << job->getJobPid() << endl;
+    if(kill(job->getJobPid(), SIGCONT) == -1){
+        perror("smash error: kill failed");
+    }
+    else{
+
+        job->setJobStatus(true);
+    }
+}
+
+void JobsList::resetTime(int jobId) {
+    JobEntry* job = getJobById(jobId);
+    job->resetTime();
+}
+
+void JobsList::setBgToFg(bool update) {
+    isBgToFg = update;
+}
+
+bool JobsList::getBgToFg() {
+    return isBgToFg;
+}
+
+void JobsList::setStop(int jobId) {
+    JobEntry* job = getJobById(jobId);
+    job->setJobStatus(false);
+}
+
+int JobsList::getFgId() {
+    return fgId;
 }
 
 void JobsCommand::execute() {
@@ -937,15 +986,7 @@ void BackgroundCommand::execute() {
         }
 
         //All good - bg the job
-        JobsList::JobEntry* job = jobs_list->getJobById(job_id);
-        cout << job->getCmd() << " : " << job->getJobPid() << endl;
-        if(kill(job->getJobPid(), SIGCONT) == -1){
-            perror("smash error: kill failed");
-        }
-        else{
-
-            job->setJobStatus(JobsList::Running);
-        }
+        jobs_list->bgJob(job_id);
     }
     else{
         //Job id was not given:
@@ -954,14 +995,8 @@ void BackgroundCommand::execute() {
             _printError("bg: there is no stopped jobs to resume");
         }
         else {
-            JobsList::JobEntry* job = jobs_list->getLastStoppedJob();
-            cout << job->getCmd() << " : " << job->getJobPid() << endl;
-            if(kill(job->getJobPid(), SIGCONT) == -1){
-                perror("smash error: kill failed");
-            }
-            else{
-                job->setJobStatus(JobsList::Running);
-            }
+            int jobId = jobs_list->getLastStoppedJob()->getJobId()  ;
+            jobs_list->bgJob(jobId);
         }
     }
 }

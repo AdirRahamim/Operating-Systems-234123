@@ -1,6 +1,7 @@
 #ifndef SMASH_COMMAND_H_
 #define SMASH_COMMAND_H_
 #include <vector>
+#include <unistd.h>
 
 using namespace std;
 #define COMMAND_ARGS_MAX_LENGTH (200)
@@ -79,8 +80,9 @@ class GetCurrDirCommand : public BuiltInCommand {
 };
 
 class ShowPidCommand : public BuiltInCommand {
+    int pid;
  public:
-  ShowPidCommand(const char* cmd_line) : BuiltInCommand(cmd_line) {};
+  ShowPidCommand(const char* cmd_line, int pid) : BuiltInCommand(cmd_line), pid(pid) {};
   virtual ~ShowPidCommand()  = default;
   void execute() override;
 };
@@ -183,6 +185,10 @@ class JobsList {
           return start_time;
       }
 
+      void resetTime(){
+          start_time = time(nullptr);
+      }
+
       int getJobId(){
           return id_job;
       }
@@ -199,8 +205,8 @@ class JobsList {
           return status;
       }
 
-      void setJobStatus(JobStat new_status){
-          status = new_status;
+      void setJobStatus(bool new_status){
+          status = (new_status == true) ? Running : Stopped;
       }
   };
  // TODO: Add your data members
@@ -208,10 +214,12 @@ private:
     int max_id;
     string fg_command;
     pid_t fg_pid;
+    bool isBgToFg;
+    int fgId;
     vector<JobEntry> jobs;
 
  public:
-    JobsList() : max_id(0), fg_command(""), fg_pid(-1) {};
+    JobsList() : max_id(0), fg_command(""), fg_pid(-1) , isBgToFg(false), fgId(-1){};
   ~JobsList() = default;
   int addJob(string cmd, pid_t pid, bool isStopped = false);
   void printJobsList();
@@ -223,9 +231,15 @@ private:
   JobEntry *getLastStoppedJob();
   int getJobsSize();
   void fgJob(int jobId);
-  void setFg(string cmd, pid_t pid);
+  void bgJob(int jobId);
+  void setFg(string cmd, pid_t pid, int jobId);
   string getFgCmd();
   pid_t getFgPid();
+  void resetTime(int jobId);
+  void setBgToFg(bool update);
+  bool getBgToFg();
+  void setStop(int jobId);
+  int getFgId();
   // TODO: Add extra methods or modify exisitng ones as needed
 };
 
@@ -303,6 +317,7 @@ class SmallShell {
   JobsList* jobs_list;
     TimeoutList* timeout_list;
     SmallShell();
+    int pid;
  public:
   Command *CreateCommand(const char* cmd_line);
   SmallShell(SmallShell const&)      = delete; // disable copy ctor
@@ -311,6 +326,7 @@ class SmallShell {
   {
     static SmallShell instance; // Guaranteed to be destroyed.
     // Instantiated on first use.
+    instance.pid = getpid();
     return instance;
   }
   ~SmallShell();

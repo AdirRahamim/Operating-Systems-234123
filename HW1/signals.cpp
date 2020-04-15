@@ -17,8 +17,14 @@ void ctrlZHandler(int sig_num) {
             perror("smash error: kill failed");
         }
         else{
-            smash.getJobsList()->addJob(smash.getJobsList()->getFgCmd(),fg_pid, true);
-            smash.getJobsList()->setFg("", -1);
+            if(!smash.getJobsList()->getBgToFg()){
+                smash.getJobsList()->addJob(smash.getJobsList()->getFgCmd(),fg_pid, true);
+            }
+            else{
+                smash.getJobsList()->getJobById(smash.getJobsList()->getFgId())->setJobStatus(false);
+            }
+            smash.getJobsList()->setFg("", -1, -1);
+            smash.getJobsList()->setBgToFg(false);
             cout << "smash: process " << fg_pid << " was stopped" << endl;
         }
     }
@@ -34,7 +40,7 @@ void ctrlCHandler(int sig_num) {
             perror("smash error: kill failed");
         }
         else{
-            smash.getJobsList()->setFg("", -1);
+            smash.getJobsList()->setFg("", -1, -1);
             cout << "smash: process " << fg_pid << " was killed" << endl;
         }
     }
