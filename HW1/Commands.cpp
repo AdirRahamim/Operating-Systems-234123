@@ -1,4 +1,3 @@
-#include <unistd.h>
 #include <string.h>
 #include <iostream>
 #include <vector>
@@ -410,7 +409,7 @@ void PipeCommand::execute() {
             return;
         }
         else if(pid2 == 0){
-            if(dup2(fd[1],STDIN_FILENO) == -1){
+            if(dup2(fd[0],STDIN_FILENO) == -1){
                 perror("smash error: dup2 failed");
                 return;
             }
@@ -550,7 +549,7 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
     }
     else if(first == "showpid"){
         free_char_array(arguments, num_args);
-        return new ShowPidCommand(cmd_line);
+        return new ShowPidCommand(cmd_line, pid);
     }
     else if(first == "pwd"){
         free_char_array(arguments, num_args);
@@ -664,7 +663,7 @@ void ChangeDirCommand::execute() {
 }
 
 void ShowPidCommand::execute() {
-    cout << "smash pid is " << getpid() << endl;
+    cout << "smash pid is " << pid << endl;
 }
 
 void GetCurrDirCommand::execute() {
