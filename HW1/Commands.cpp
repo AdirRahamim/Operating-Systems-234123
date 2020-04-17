@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <fcntl.h>
 #include "Commands.h"
+#include "signals.h"
 
 using namespace std;
 
@@ -73,11 +74,12 @@ void _removeBackgroundSign(char* cmd_line) {
       return;
   }
   // find last character other than spaces
-  unsigned int idx = str.find_last_not_of(WHITESPACE);
+  int idx = str.find_last_not_of(WHITESPACE);
   // if all characters are spaces then return
-  if (idx == string::npos) {
+  if (idx == (int)string::npos) {
     return;
   }
+
   // if the command line does not end with & then return
   if (cmd_line[idx] != '&') {
     return;
@@ -122,12 +124,11 @@ void CopyCommand::execute() {
     }
 
     int read_file = open(arguments[1], O_RDONLY);
-    //00int read_file = open("/home/adir/Downloads/טכניון/Operating-Systems-234123/HW1/test_src_1.txt", O_RDONLY);
     if(read_file == -1){
         perror("smash error: open failed");
         return;
     }
-    int write_file = open(arguments[2], O_WRONLY | O_CREAT | O_TRUNC, 0664);
+    int write_file = open(arguments[2], O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(write_file == -1){
         perror("smash error: open failed");
         if(close(read_file) == -1){
@@ -147,7 +148,7 @@ void CopyCommand::execute() {
     }
     else if(pid == 0) {
         //Child process
-        //setpgrp();
+        setpgrp();
 
         while(true){
             ssize_t read_size = read(read_file, buffer.data(), buffer.size());
@@ -215,6 +216,10 @@ void TimeoutCommand::execute() {
     }
 
     int timeout_time = atoi(arguments[1]);
+    if(timeout_time == 0){
+        _printError("timeout: invalid arguments");
+        return;
+    }
 
     string new_command;
 
@@ -251,7 +256,9 @@ void TimeoutCommand::execute() {
     }
     else{
         //Parent
-        alarm(timeout_time);
+        int next_alarm = alarm(timeout_time);
+        temp_smash.setNextAlarm(next_alarm);
+        temp_smash.setCurrentAlarm(timeout_time);
         if(is_bg){
             int job_id = jobs_list->addJob(command,pid, false);
             timeout_list->addJob(command, job_id, timeout_time, pid);
@@ -298,14 +305,14 @@ void RedirectionCommand::execute() {
     file_path = _trim(file_path);
     int file;
     if(isAppend){
-        file = open(file_path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0664);
+        file = open(file_path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0666);
         if(file == -1){
             perror("smash error: open failed");
             return;
         }
     }
     else {
-        file = open(file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0664);
+        file = open(file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
         if (file == -1) {
             perror("smash error: open failed");
             return;
@@ -335,6 +342,12 @@ void RedirectionCommand::execute() {
 
 
 void PipeCommand::execute() {
+    if(signal(SIGTSTP , ctrlZHandlerPipe)==SIG_ERR) {
+        perror("smash error: failed to set ctrl-Z handler");
+    }
+    if(signal(SIGINT , ctrlCHandlerPipe)==SIG_ERR) {
+        perror("smash error: failed to set ctrl-C handler");
+    }
     bool is_bg = false;
     string new_command = command;
     if (_isBackgroundComamnd(command.c_str())) {
@@ -365,6 +378,7 @@ void PipeCommand::execute() {
         //Child
         setpgrp();
 
+        pid = getpgrp();
 
         //Create pipe
         int fd[2];
@@ -380,8 +394,6 @@ void PipeCommand::execute() {
         } else if (pid_cmd1 == 0) {
 
             //Child command 1
-
-            setpgrp();
 
             if (isStderrPipe) {
                 if (dup2(fd[1], STDERR_FILENO) == -1) {
@@ -473,7 +485,7 @@ void ExternalCommand::execute() {
     }
     else if( pid == 0){ //Child proccess
         setpgrp();
-        execl(BASH_PATH, "bash", "-c", new_command.c_str(), nullptr);
+        execl(BASH_PATH, BASH_PATH, "-c", new_command.c_str(), nullptr);
         perror("smash error: execl failed");
         exit(0);
     }
@@ -504,6 +516,7 @@ SmallShell::SmallShell() {
     prompt = "smash";
     jobs_list = new JobsList();
     timeout_list = new TimeoutList();
+    next_alarm = 0;
 }
 
 SmallShell::~SmallShell() {
@@ -788,13 +801,18 @@ void JobsList::removeFinishedJobs() {
     auto it = jobs.begin();
     while(it != jobs.end()){
         pid = it->getJobPid();
-        res = waitpid(pid, nullptr, WNOHANG);
 
-        if(res == -1){
+        res = waitpid(pid, nullptr, WNOHANG);
+        int err = errno;
+        if(res == -1 && err != ECHILD){
             perror("smash error: waitpid failed");
+            it++;
             continue;
         }
         else if(res == pid){
+            it = jobs.erase(it);
+        }
+        else if(res == -1 && err == ECHILD){
             it = jobs.erase(it);
         }
         else{
@@ -822,7 +840,18 @@ void JobsList::fgJob(int jobId) {
     setFg(job->getCmd(), job_pid, job->getJobId());
     resetTime(jobId);
     setBgToFg(true);
-    if(kill(job_pid, SIGCONT) == -1){
+    bool isPipe = false;
+    if(job->getCmd().find('|') != string::npos){
+        isPipe = true;
+    }
+    int res = 0;
+    if(isPipe){
+        res = killpg(job_pid, SIGCONT);
+    }
+    else{
+        res = kill(job_pid, SIGCONT);
+    }
+    if(res == -1){
         perror("smash error: kill failed");
     }
     else{
@@ -831,6 +860,7 @@ void JobsList::fgJob(int jobId) {
             perror("smash error: waitpid failed");
         }
     }
+
     setFg("", -1, -1);
     setBgToFg(false);
 }
@@ -906,6 +936,10 @@ void KillCommand::execute() {
 
     //Arrive here -> syntax is valid!
     int signal_num = atoi(arguments[1]);
+    if(signal_num<0 || signal_num > 31){
+        _printError("kill: invalid arguments");
+        return;
+    }
     int id_num = atoi(arguments[2]);
     //Check if job id exits
     if(jobs_list->getJobById(id_num) == nullptr){
@@ -1003,9 +1037,12 @@ void BackgroundCommand::execute() {
 
 void QuitCommand::execute() {
     if(num_arguments > 1){
-        if(string(arguments[1]) == "kill"){
-            cout << "smash: sending SIGKILL signal to " << jobs_list->getJobsSize() << " jobs:" <<endl;
-            jobs_list->killAllJobs();
+        for(int i=1 ; i<num_arguments; i++){
+            if(string(arguments[i]) == "kill"){
+                cout << "smash: sending SIGKILL signal to " << jobs_list->getJobsSize() << " jobs:" <<endl;
+                jobs_list->killAllJobs();
+                break;
+            }
         }
     }
     exit(0);

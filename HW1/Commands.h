@@ -318,6 +318,8 @@ class SmallShell {
     TimeoutList* timeout_list;
     SmallShell();
     int pid;
+    int next_alarm;
+    int current_alarm;
  public:
   Command *CreateCommand(const char* cmd_line);
   SmallShell(SmallShell const&)      = delete; // disable copy ctor
@@ -342,6 +344,22 @@ class SmallShell {
   TimeoutList* getTimeoutList(){
       return timeout_list;
   }
+
+  void setNextAlarm(int nextAlarm){
+      next_alarm = nextAlarm;
+  }
+
+  int getNextAlarm(){
+      return next_alarm;
+  }
+
+    void setCurrentAlarm(int currentAlarm){
+        current_alarm=currentAlarm;
+    }
+
+    int getCurrentAlarm(){
+        return current_alarm;
+    }
 };
 
 #endif //SMASH_COMMAND_H_

@@ -4,5 +4,6 @@
 void ctrlZHandler(int sig_num);
 void ctrlCHandler(int sig_num);
 void alarmHandler(int sig_num);
-
+void ctrlZHandlerPipe(int sig_num);
+void ctrlCHandlerPipe(int sig_num);
 #endif //SMASH__SIGNALS_H_
