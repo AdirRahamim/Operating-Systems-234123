@@ -2,6 +2,8 @@
 #define SMASH_COMMAND_H_
 #include <vector>
 #include <unistd.h>
+#include <algorithm>
+
 
 using namespace std;
 #define COMMAND_ARGS_MAX_LENGTH (200)
@@ -111,11 +113,23 @@ public:
         }
         ~TimeoutJobs() = default;
 
-        int getDuration(){
+        bool operator< (const TimeoutJobs& job) const{
+            return (duration < job.duration);
+        }
+
+        int getDuration() const {
             return duration;
         }
 
-        time_t getStartTime(){
+        void updateDuration(int update){
+            duration = update;
+        }
+
+        void resetTime(){
+            start_time = time(nullptr);
+        }
+
+        time_t getStartTime() const{
             return start_time;
         }
 
@@ -123,7 +137,7 @@ public:
             return cmd;
         }
 
-        pid_t getPid(){
+        pid_t getPid() const{
             return job_pid;
         }
 
@@ -144,7 +158,7 @@ public:
     void removeTimeoutJobs(){
         auto it = timeout_vec.begin();
         while(it != timeout_vec.end()){
-            if(it->getDuration() == (time(nullptr) - it->getStartTime())){
+            if(it->getDuration() <= 0){
                 cout << "smash: " << it->getCmd() << " timed out!" << endl;
                 if(kill(it->getPid(), SIGKILL) == -1){
                     perror("smash error: kill failed");
@@ -154,6 +168,46 @@ public:
             else{
                 it++;
             }
+        }
+    }
+
+    void InsertAndCall(string cmd, int job_id, int duration, pid_t pid){
+        pid_t current_pid = -1;
+        if(!timeout_vec.empty()){
+            current_pid = timeout_vec.begin()->getPid();
+        }
+        TimeoutJobs job = TimeoutJobs(cmd, job_id, duration, pid);
+        timeout_vec.push_back(job);
+        sort(timeout_vec.begin(), timeout_vec.end());
+        auto it = timeout_vec.begin();
+        if(current_pid == -1){
+            alarm(duration);
+            return;
+        }
+        //current_pid != -1
+        if(current_pid != timeout_vec.begin()->getPid()){
+            alarm(timeout_vec.begin()->getDuration());
+        }
+        //Dont call now new alarm because we entered alarm after the current one...
+    }
+
+    void update(){
+        auto it = timeout_vec.begin();
+        int time_diff = 0;
+        while(it != timeout_vec.end()){
+            time_diff = time(nullptr) - it->getStartTime();
+            it->updateDuration(it->getDuration()-time_diff);
+            it->resetTime();
+            it++;
+
+        }
+    }
+
+    void callNext(){
+        sort(timeout_vec.begin(), timeout_vec.end());
+        if(!timeout_vec.empty()){
+            auto it = timeout_vec.begin();
+            alarm(it->getDuration());
         }
     }
 
@@ -286,8 +340,6 @@ public:
     void execute() override;
 };
 
-
-// TODO: should it really inhirit from BuiltInCommand ?
 class CopyCommand : public Command {
     JobsList* jobs_list;
  public:
@@ -309,7 +361,6 @@ public:
     void execute() override;
 };
 
-
 class SmallShell {
     // TODO: Add your data members
   string prompt;
@@ -318,8 +369,8 @@ class SmallShell {
     TimeoutList* timeout_list;
     SmallShell();
     int pid;
-    int next_alarm;
-    int current_alarm;
+    vector<TimeoutList::TimeoutJobs> alarms;
+
  public:
   Command *CreateCommand(const char* cmd_line);
   SmallShell(SmallShell const&)      = delete; // disable copy ctor
@@ -345,21 +396,6 @@ class SmallShell {
       return timeout_list;
   }
 
-  void setNextAlarm(int nextAlarm){
-      next_alarm = nextAlarm;
-  }
-
-  int getNextAlarm(){
-      return next_alarm;
-  }
-
-    void setCurrentAlarm(int currentAlarm){
-        current_alarm=currentAlarm;
-    }
-
-    int getCurrentAlarm(){
-        return current_alarm;
-    }
 };
 
 #endif //SMASH_COMMAND_H_

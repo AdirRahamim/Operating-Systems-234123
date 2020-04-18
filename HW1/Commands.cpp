@@ -4,7 +4,6 @@
 #include <sstream>
 #include <sys/wait.h>
 #include <iomanip>
-#include <algorithm>
 #include <fcntl.h>
 #include "Commands.h"
 #include "signals.h"
@@ -256,17 +255,14 @@ void TimeoutCommand::execute() {
     }
     else{
         //Parent
-        int next_alarm = alarm(timeout_time);
-        temp_smash.setNextAlarm(next_alarm);
-        temp_smash.setCurrentAlarm(timeout_time);
         if(is_bg){
             int job_id = jobs_list->addJob(command,pid, false);
-            timeout_list->addJob(command, job_id, timeout_time, pid);
+            timeout_list->InsertAndCall(command, job_id, timeout_time, pid);
             return; //No need to wait...
         }
         else{
             jobs_list->setFg(command, pid, -1);
-            timeout_list->addJob(command, -1, timeout_time, pid);
+            timeout_list->InsertAndCall(command, -1, timeout_time, pid);
             int res = waitpid(pid, nullptr, WUNTRACED);
             if(res == -1){
                 perror("smash error: waitpid failed");
@@ -516,7 +512,6 @@ SmallShell::SmallShell() {
     prompt = "smash";
     jobs_list = new JobsList();
     timeout_list = new TimeoutList();
-    next_alarm = 0;
 }
 
 SmallShell::~SmallShell() {

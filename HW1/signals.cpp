@@ -86,12 +86,10 @@ void alarmHandler(int sig_num) {
   // TODO: Add your implementation
   cout << "smash: got an alarm" <<endl;
   SmallShell& smash = SmallShell::getInstance();
-    if(smash.getNextAlarm() != 0){
-        unsigned int next = alarm(smash.getNextAlarm() - smash.getCurrentAlarm());
-        smash.setNextAlarm(next);
-    }
+  smash.getTimeoutList()->update();
   smash.getTimeoutList()->removeTimeoutJobs();
   smash.getJobsList()->removeFinishedJobs();
+  smash.getTimeoutList()->callNext();
 
 }
 
