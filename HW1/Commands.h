@@ -179,7 +179,6 @@ public:
         TimeoutJobs job = TimeoutJobs(cmd, job_id, duration, pid);
         timeout_vec.push_back(job);
         sort(timeout_vec.begin(), timeout_vec.end());
-        auto it = timeout_vec.begin();
         if(current_pid == -1){
             alarm(duration);
             return;

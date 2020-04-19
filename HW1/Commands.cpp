@@ -137,7 +137,7 @@ void CopyCommand::execute() {
     }
 
     //Create buffer to read data
-    vector<char> buffer(1024);
+    vector<char> buffer(4096);
 
     int pid = fork();
 
@@ -340,9 +340,11 @@ void RedirectionCommand::execute() {
 void PipeCommand::execute() {
     if(signal(SIGTSTP , ctrlZHandlerPipe)==SIG_ERR) {
         perror("smash error: failed to set ctrl-Z handler");
+        return;
     }
     if(signal(SIGINT , ctrlCHandlerPipe)==SIG_ERR) {
         perror("smash error: failed to set ctrl-C handler");
+        return;
     }
     bool is_bg = false;
     string new_command = command;
@@ -931,7 +933,7 @@ void KillCommand::execute() {
 
     //Arrive here -> syntax is valid!
     int signal_num = atoi(arguments[1]);
-    if(signal_num<0 || signal_num > 31){
+    if(signal_num>=0 || signal_num < -31){
         _printError("kill: invalid arguments");
         return;
     }
@@ -939,6 +941,7 @@ void KillCommand::execute() {
     //Check if job id exits
     if(jobs_list->getJobById(id_num) == nullptr){
         _printError("kill: job-id " + job_id + " does not exist");
+        return;
     }
 
     //All valid -> send signal
