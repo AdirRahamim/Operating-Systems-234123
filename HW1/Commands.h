@@ -3,6 +3,7 @@
 #include <vector>
 #include <unistd.h>
 #include <algorithm>
+#include <sys/wait.h>
 
 
 using namespace std;
@@ -99,118 +100,6 @@ public:
 };
 
 
-class TimeoutList{
-public:
-    class TimeoutJobs{
-        string cmd;
-        int job_id;
-        time_t start_time;
-        int duration;
-        pid_t job_pid;
-    public:
-        TimeoutJobs(string cmd, int job_id, int duration, pid_t pid) : cmd(cmd), job_id(job_id) , duration(duration), job_pid(pid){
-            start_time = time(nullptr);
-        }
-        ~TimeoutJobs() = default;
-
-        bool operator< (const TimeoutJobs& job) const{
-            return (duration < job.duration);
-        }
-
-        int getDuration() const {
-            return duration;
-        }
-
-        void updateDuration(int update){
-            duration = update;
-        }
-
-        void resetTime(){
-            start_time = time(nullptr);
-        }
-
-        time_t getStartTime() const{
-            return start_time;
-        }
-
-        string getCmd(){
-            return cmd;
-        }
-
-        pid_t getPid() const{
-            return job_pid;
-        }
-
-        int getJobId(){
-            return job_id;
-        }
-
-    };
-private:
-    vector<TimeoutJobs> timeout_vec;
-public:
-
-    void addJob(string cmd, int job_id, int duration, pid_t pid){
-        TimeoutJobs job = TimeoutJobs(cmd, job_id, duration, pid);
-        timeout_vec.push_back(job);
-    }
-
-    void removeTimeoutJobs(){
-        auto it = timeout_vec.begin();
-        while(it != timeout_vec.end()){
-            if(it->getDuration() <= 0){
-                cout << "smash: " << it->getCmd() << " timed out!" << endl;
-                if(kill(it->getPid(), SIGKILL) == -1){
-                    perror("smash error: kill failed");
-                }
-                it = timeout_vec.erase(it);
-            }
-            else{
-                it++;
-            }
-        }
-    }
-
-    void InsertAndCall(string cmd, int job_id, int duration, pid_t pid){
-        pid_t current_pid = -1;
-        if(!timeout_vec.empty()){
-            current_pid = timeout_vec.begin()->getPid();
-        }
-        TimeoutJobs job = TimeoutJobs(cmd, job_id, duration, pid);
-        timeout_vec.push_back(job);
-        sort(timeout_vec.begin(), timeout_vec.end());
-        if(current_pid == -1){
-            alarm(duration);
-            return;
-        }
-        //current_pid != -1
-        if(current_pid != timeout_vec.begin()->getPid()){
-            alarm(timeout_vec.begin()->getDuration());
-        }
-        //Dont call now new alarm because we entered alarm after the current one...
-    }
-
-    void update(){
-        auto it = timeout_vec.begin();
-        int time_diff = 0;
-        while(it != timeout_vec.end()){
-            time_diff = time(nullptr) - it->getStartTime();
-            it->updateDuration(it->getDuration()-time_diff);
-            it->resetTime();
-            it++;
-
-        }
-    }
-
-    void callNext(){
-        sort(timeout_vec.begin(), timeout_vec.end());
-        if(!timeout_vec.empty()){
-            auto it = timeout_vec.begin();
-            alarm(it->getDuration());
-        }
-    }
-
-};
 
 class JobsList {
  public:
@@ -296,6 +185,138 @@ private:
   // TODO: Add extra methods or modify exisitng ones as needed
 };
 
+class TimeoutList{
+public:
+    class TimeoutJobs{
+        string cmd;
+        int job_id;
+        time_t start_time;
+        int duration;
+        pid_t job_pid;
+    public:
+        TimeoutJobs(string cmd, int job_id, int duration, pid_t pid) : cmd(cmd), job_id(job_id) , duration(duration), job_pid(pid){
+            start_time = time(nullptr);
+        }
+        ~TimeoutJobs() = default;
+
+        bool operator< (const TimeoutJobs& job) const{
+            return (duration < job.duration);
+        }
+
+        int getDuration() const {
+            return duration;
+        }
+
+        void updateDuration(int update){
+            duration = update;
+        }
+
+        void resetTime(){
+            start_time = time(nullptr);
+        }
+
+        time_t getStartTime() const{
+            return start_time;
+        }
+
+        string getCmd(){
+            return cmd;
+        }
+
+        pid_t getPid() const{
+            return job_pid;
+        }
+
+        int getJobId(){
+            return job_id;
+        }
+
+    };
+private:
+    vector<TimeoutJobs> timeout_vec;
+    JobsList* jobs;
+public:
+    TimeoutList(JobsList* jobs) : jobs(jobs){};
+
+    void addJob(string cmd, int job_id, int duration, pid_t pid){
+        TimeoutJobs job = TimeoutJobs(cmd, job_id, duration, pid);
+        timeout_vec.push_back(job);
+    }
+
+    bool checkAreFinished() {
+        auto it = timeout_vec.begin();
+        while (it != timeout_vec.end()) {
+            if (it->getDuration() <= 0) {
+                if (jobs->getJobById(it->getJobId()) == nullptr && jobs->getFgPid() != it->getPid()) {
+                    //Jobs already finished..
+                    it = timeout_vec.erase(it);
+                    continue;
+                } else {
+                    //Found unfinished job
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+    void removeTimeoutJobs(){
+        auto it = timeout_vec.begin();
+        while(it != timeout_vec.end()){
+            if(it->getDuration() <= 0){
+                cout << "smash: " << it->getCmd() << " timed out!" << endl;
+                if(kill(it->getPid(), SIGKILL) == -1){
+                    perror("smash error: kill failed");
+                }
+                it = timeout_vec.erase(it);
+            }
+            else{
+                it++;
+            }
+        }
+    }
+
+    void InsertAndCall(string cmd, int job_id, int duration, pid_t pid){
+        pid_t current_pid = -1;
+        if(!timeout_vec.empty()){
+            current_pid = timeout_vec.begin()->getPid();
+        }
+        TimeoutJobs job = TimeoutJobs(cmd, job_id, duration, pid);
+        timeout_vec.push_back(job);
+        sort(timeout_vec.begin(), timeout_vec.end());
+        if(current_pid == -1){
+            alarm(duration);
+            return;
+        }
+        //current_pid != -1
+        if(current_pid != timeout_vec.begin()->getPid()){
+            alarm(timeout_vec.begin()->getDuration());
+        }
+        //Dont call now new alarm because we entered alarm after the current one...
+    }
+
+    void update(){
+        auto it = timeout_vec.begin();
+        int time_diff = 0;
+        while(it != timeout_vec.end()){
+            time_diff = time(nullptr) - it->getStartTime();
+            it->updateDuration(it->getDuration()-time_diff);
+            it->resetTime();
+            it++;
+
+        }
+    }
+
+    void callNext(){
+        sort(timeout_vec.begin(), timeout_vec.end());
+        if(!timeout_vec.empty()){
+            auto it = timeout_vec.begin();
+            alarm(it->getDuration());
+        }
+    }
+
+};
+
+
 class JobsCommand : public BuiltInCommand {
  // TODO: Add your data members
  JobsList* jobs_list;
@@ -365,10 +386,10 @@ class SmallShell {
   string prompt;
   string last_pwd;
   JobsList* jobs_list;
-    TimeoutList* timeout_list;
-    SmallShell();
-    int pid;
-    vector<TimeoutList::TimeoutJobs> alarms;
+  TimeoutList* timeout_list;
+  SmallShell();
+  int pid;
+  vector<TimeoutList::TimeoutJobs> alarms;
 
  public:
   Command *CreateCommand(const char* cmd_line);

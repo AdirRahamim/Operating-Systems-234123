@@ -2,7 +2,6 @@
 #include <iostream>
 #include <vector>
 #include <sstream>
-#include <sys/wait.h>
 #include <iomanip>
 #include <fcntl.h>
 #include "Commands.h"
@@ -100,7 +99,7 @@ bool checkNumber(string s){
 }
 
 void _printError(const string err){
-    cout << "smash error: " << err << endl;
+    cerr << "smash error: " << err << endl;
 }
 
 // TODO: Add your implementation for classes in Commands.h
@@ -215,7 +214,7 @@ void TimeoutCommand::execute() {
     }
 
     int timeout_time = atoi(arguments[1]);
-    if(timeout_time == 0){
+    if(timeout_time <= 0){
         _printError("timeout: invalid arguments");
         return;
     }
@@ -276,7 +275,6 @@ void TimeoutCommand::execute() {
 
 }
 
-
 void RedirectionCommand::execute() {
     bool is_bg = false;
     string new_command = command;
@@ -299,6 +297,13 @@ void RedirectionCommand::execute() {
     }
     string file_path = new_command.substr(redirect+1+(int)isAppend);
     file_path = _trim(file_path);
+    char* arguments[COMMAND_ARGS_MAX_LENGTH];
+    _parseCommandLine(file_path.c_str(), arguments);
+    if(num_arguments == 0 ){
+        _printError("redirection: invalid arguments");
+        return;
+    }
+    file_path = arguments[0];
     int file;
     if(isAppend){
         file = open(file_path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0666);
@@ -513,7 +518,7 @@ SmallShell::SmallShell() {
     last_pwd = "";
     prompt = "smash";
     jobs_list = new JobsList();
-    timeout_list = new TimeoutList();
+    timeout_list = new TimeoutList(jobs_list);
 }
 
 SmallShell::~SmallShell() {

@@ -84,12 +84,16 @@ void ctrlCHandlerPipe(int sig_num){
 
 void alarmHandler(int sig_num) {
   // TODO: Add your implementation
-  cout << "smash: got an alarm" <<endl;
   SmallShell& smash = SmallShell::getInstance();
-  smash.getTimeoutList()->update();
-  smash.getTimeoutList()->removeTimeoutJobs();
   smash.getJobsList()->removeFinishedJobs();
-  smash.getTimeoutList()->callNext();
+  smash.getTimeoutList()->update();
+  if(!smash.getTimeoutList()->checkAreFinished()){
 
+  }
+  else{
+      cout << "smash: got an alarm" <<endl;
+      smash.getTimeoutList()->removeTimeoutJobs();
+      smash.getTimeoutList()->callNext();
+  }
 }
 
