@@ -14,15 +14,13 @@ class Command {
 // TODO: Add your data members
 protected:
     string command;
-    char* arguments[COMMAND_ARGS_MAX_LENGTH];
+    //char* arguments[COMMAND_ARGS_MAX_LENGTH];
+    vector<string> arguments;
     int num_arguments;
 
  public:
   explicit Command(const char* cmd_line);
   virtual ~Command(){
-      for(int i = 0; i<num_arguments; i++){
-          free(arguments[i]);
-      }
   }
   virtual void execute() = 0;
   //virtual void prepare();

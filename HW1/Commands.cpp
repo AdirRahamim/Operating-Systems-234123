@@ -46,19 +46,17 @@ string _trim(const std::string& s)
   return _rtrim(_ltrim(s));
 }
 
-int _parseCommandLine(const char* cmd_line, char** args) {
-  FUNC_ENTRY()
-  int i = 0;
-  std::istringstream iss(_trim(string(cmd_line)).c_str());
-  for(std::string s; iss >> s; ) {
-    args[i] = (char*)malloc(s.length()+1);
-    memset(args[i], 0, s.length()+1);
-    strcpy(args[i], s.c_str());
-    args[++i] = NULL;
-  }
-  return i;
+int _parseCommandLine(const char* cmd_line, vector<string>& args) {
+    FUNC_ENTRY()
+    int i = 0;
+    std::istringstream iss(_trim(string(cmd_line)).c_str());
+    for(std::string s; iss >> s; ) {
+        args.push_back(s);
+        i++;
+    }
+    return i;
 
-  FUNC_EXIT()
+    FUNC_EXIT()
 }
 
 bool _isBackgroundComamnd(const char* cmd_line) {
@@ -121,12 +119,12 @@ void CopyCommand::execute() {
         new_command = string(temp);
     }
 
-    int read_file = open(arguments[1], O_RDONLY);
+    int read_file = open(arguments[1].c_str(), O_RDONLY);
     if(read_file == -1){
         perror("smash error: open failed");
         return;
     }
-    int write_file = open(arguments[2], O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    int write_file = open(arguments[2].c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(write_file == -1){
         perror("smash error: open failed");
         if(close(read_file) == -1){
@@ -213,7 +211,7 @@ void TimeoutCommand::execute() {
         return;
     }
 
-    int timeout_time = atoi(arguments[1]);
+    int timeout_time = atoi(arguments[1].c_str());
     if(timeout_time <= 0){
         _printError("timeout: invalid arguments");
         return;
@@ -297,7 +295,7 @@ void RedirectionCommand::execute() {
     }
     string file_path = new_command.substr(redirect+1+(int)isAppend);
     file_path = _trim(file_path);
-    char* arguments[COMMAND_ARGS_MAX_LENGTH];
+    vector<string> arguments;
     _parseCommandLine(file_path.c_str(), arguments);
     if(num_arguments == 0 ){
         _printError("redirection: invalid arguments");
@@ -528,11 +526,7 @@ SmallShell::~SmallShell() {
 
 }
 
-void free_char_array(char* array[], int num_elements){
-    for(int i = 0; i<num_elements; i++){
-        free(array[i]);
-    }
-}
+
 
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
@@ -554,7 +548,7 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
     char cmd[COMMAND_ARGS_MAX_LENGTH];
     strcpy(cmd, cmd_line);
     _removeBackgroundSign(cmd);
-    char* arguments[COMMAND_ARGS_MAX_LENGTH];
+    vector<string> arguments;
     int num_args = _parseCommandLine(cmd, arguments);
     if(num_args == 0){
         return nullptr;
@@ -563,62 +557,47 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
     string cmd_s = _trim(string(cmd_line));
 
     if(cmd_s.find('|') != string::npos){
-        free_char_array(arguments, num_args);
         return new PipeCommand(cmd_line, jobs_list);
     }
     else if(cmd_s.find('>') != string::npos){
-        free_char_array(arguments, num_args);
         return new RedirectionCommand(cmd_line, jobs_list);
     }
     else if( first == "chprompt"){
-        free_char_array(arguments, num_args);
         return new ChpromptCommand(cmd_line, prompt);
     }
     else if(first == "showpid"){
-        free_char_array(arguments, num_args);
         return new ShowPidCommand(cmd_line, pid);
     }
     else if(first == "pwd"){
-        free_char_array(arguments, num_args);
         return new GetCurrDirCommand(cmd_line);
     }
     else if(first == "cd"){
-        free_char_array(arguments, num_args);
         return new ChangeDirCommand(cmd_line, last_pwd);
     }
     else if(first == "jobs"){
-        free_char_array(arguments, num_args);
         return new JobsCommand(cmd_line, jobs_list);
     }
     else if(first == "kill"){
-        free_char_array(arguments, num_args);
         return new KillCommand(cmd_line, jobs_list);
     }
     else if(first == "fg"){
-        free_char_array(arguments, num_args);
         return new ForegroundCommand(cmd_line, jobs_list);
     }
     else if(first == "bg"){
-        free_char_array(arguments, num_args);
         return new BackgroundCommand(cmd_line, jobs_list);
     }
     else if(first == "quit"){
-        free_char_array(arguments, num_args);
         return new QuitCommand(cmd_line, jobs_list);
     }
     else if(first == "cp"){
-        free_char_array(arguments, num_args);
         return new CopyCommand(cmd_line, jobs_list);
     }
     else if(first == "timeout"){
-        free_char_array(arguments, num_args);
         return new TimeoutCommand(cmd_line, jobs_list, timeout_list);
     }
     else{
-        free_char_array(arguments, num_args);
         return new ExternalCommand(cmd_line, jobs_list);
     }
-    free_char_array(arguments, num_args);
     return nullptr;
 }
 
@@ -653,39 +632,39 @@ void ChangeDirCommand::execute() {
     if(num_arguments == 1){
         return;
     }
-    char* path = this->arguments[1];
+    string path = this->arguments[1];
     if(this->num_arguments>2){
         _printError("cd: too many arguments");
+        return;
     }
-    else if(!strcmp(path, "-") && this->last_PWD.empty()){
+    if(path == "-" && this->last_PWD.empty()){
         _printError("cd: OLDPWD not set");
+        return;
+    }
+    char* temp = get_current_dir_name();
+    if(temp == nullptr){
+        perror("smash error: get_current_dir_name failed");
+        return;
+    }
+    string curr_PWD = string(temp);
+    free(temp);
+    int res = 0;
+    if(path == "-"){
+        //Return to last path
+        res = chdir(last_PWD.c_str());
     }
     else{
-        char* temp = get_current_dir_name();
-        if(temp == nullptr){
-            perror("smash error: get_current_dir_name failed");
-            return;
-        }
-        string curr_PWD = string(temp);
-        free(temp);
-        int res = 0;
-        if(!strcmp(path, "-")){
-            //Return to last path
-            res = chdir(last_PWD.c_str());
-        }
-        else{
-            //Change to new path
-            res = chdir(path);
-        }
-        if(res == -1){
-            //Error...
-            perror("smash error: cd failed");
-            return;
-        }
-        else{
-            //Succeed so save last path
-            last_PWD = curr_PWD;
-        }
+        //Change to new path
+        res = chdir(path.c_str());
+    }
+    if(res == -1){
+        //Error...
+        perror("smash error: cd failed");
+        return;
+    }
+    else{
+        //Succeed so save last path
+        last_PWD = curr_PWD;
     }
 }
 
@@ -937,12 +916,12 @@ void KillCommand::execute() {
     }
 
     //Arrive here -> syntax is valid!
-    int signal_num = atoi(arguments[1]);
+    int signal_num = atoi(arguments[1].c_str());
     if(signal_num>=0 || signal_num < -31){
         _printError("kill: invalid arguments");
         return;
     }
-    int id_num = atoi(arguments[2]);
+    int id_num = atoi(arguments[2].c_str());
     //Check if job id exits
     if(jobs_list->getJobById(id_num) == nullptr){
         _printError("kill: job-id " + job_id + " does not exist");
@@ -975,7 +954,7 @@ void ForegroundCommand::execute() {
             _printError("fg: invalid arguments");
             return;
         }
-        int job_id = atoi(arguments[1]);
+        int job_id = atoi(arguments[1].c_str());
         if(jobs_list->getJobById(job_id) == nullptr){
             //Job dosent exist..
             _printError("fg: job-id " + to_string(job_id) + " does not exist");
@@ -1010,7 +989,7 @@ void BackgroundCommand::execute() {
             _printError("fg: invalid arguments");
             return;
         }
-        int job_id = atoi(arguments[1]);
+        int job_id = atoi(arguments[1].c_str());
         if(jobs_list->getJobById(job_id) == nullptr){
             //Job dosent exist..
             _printError("bg: job-id " + to_string(job_id) + " does not exist");
@@ -1052,7 +1031,7 @@ void QuitCommand::execute() {
 }
 
 void ChpromptCommand::execute() {
-    if(arguments[1] == nullptr){
+    if(num_arguments == 1){
         prompt = "smash";
     }
     else{

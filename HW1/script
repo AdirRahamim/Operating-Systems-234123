@@ -1,0 +1,10 @@
+#!/bin/bash
+
+for i in {15..21}
+do
+
+echo "################### Running test number $i  ####################"
+python ttest.py ${i} | ./smash &>test${i}.out
+diff test${i}.exp test${i}.out
+
+done
