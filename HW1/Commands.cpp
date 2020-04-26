@@ -103,6 +103,7 @@ void _printError(const string err){
 // TODO: Add your implementation for classes in Commands.h
 
 void CopyCommand::execute() {
+    jobs_list->removeFinishedJobs();
     if(num_arguments < 3 || (num_arguments == 4 && arguments[3][0] != '&') || num_arguments > 4){
         _printError("cp: invalid arguments");
         return;
@@ -201,7 +202,7 @@ void CopyCommand::execute() {
 }
 
 void TimeoutCommand::execute() {
-
+    jobs_list->removeFinishedJobs();
     if(num_arguments == 1){
         _printError("timeout: invalid arguments");
         return;
@@ -341,6 +342,7 @@ void RedirectionCommand::execute() {
 
 
 void PipeCommand::execute() {
+    jobs_list->removeFinishedJobs();
     if(signal(SIGTSTP , ctrlZHandlerPipe)==SIG_ERR) {
         perror("smash error: failed to set ctrl-Z handler");
         return;
@@ -466,6 +468,7 @@ void PipeCommand::execute() {
 }
 
 void ExternalCommand::execute() {
+    jobs_list->removeFinishedJobs();
     bool is_bg = false;
     string new_command = command;
     if(_isBackgroundComamnd(command.c_str())){
@@ -782,8 +785,17 @@ void JobsList::removeFinishedJobs() {
     auto it = jobs.begin();
     while(it != jobs.end()){
         pid = it->getJobPid();
-
         res = waitpid(pid, nullptr, WNOHANG);
+
+        if(res == pid){
+            it = jobs.erase(it);
+        }
+        else{
+            it++;
+        }
+        /*
+        res = waitpid(pid, nullptr, WNOHANG);
+
         int err = errno;
         if(res == -1 && err != ECHILD){
             perror("smash error: waitpid failed");
@@ -799,12 +811,14 @@ void JobsList::removeFinishedJobs() {
         else{
             it++;
         }
+         */
         if(jobs.empty()){
             max_id = 0;
         }
         else{
             max_id = getLastJob()->getJobId();
         }
+
     }
 }
 
@@ -817,8 +831,9 @@ void JobsList::fgJob(int jobId) {
     cout << job->getCmd() << " : " << job->getJobPid() << endl;
 
     pid_t job_pid = job->getJobPid();
-
+    int job_id = job->getJobId();
     setFg(job->getCmd(), job_pid, job->getJobId());
+    job->setJobStatus(true);
     resetTime(jobId);
     setBgToFg(true);
     bool isPipe = false;
@@ -841,7 +856,9 @@ void JobsList::fgJob(int jobId) {
             perror("smash error: waitpid failed");
         }
     }
-
+    if(job->getJobStatus() != Stopped){
+        removeJobById(job_id);
+    }
     setFg("", -1, -1);
     setBgToFg(false);
 }
