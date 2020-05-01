@@ -37,8 +37,9 @@ class BuiltInCommand : public Command {
 class JobsList;
 class ExternalCommand : public Command {
  JobsList* jobs_list;
+ bool isPipe;
  public:
-  explicit ExternalCommand(const char* cmd_line, JobsList* jobs) : Command(cmd_line), jobs_list(jobs) {};
+  explicit ExternalCommand(const char* cmd_line, JobsList* jobs, bool Pipe=false) : Command(cmd_line), jobs_list(jobs), isPipe(Pipe) {};
   virtual ~ExternalCommand() = default;
   void execute() override;
 };
@@ -166,6 +167,7 @@ private:
   void killAllJobs();
   void removeFinishedJobs();
   JobEntry * getJobById(int jobId);
+  JobEntry* getJobByPid(pid_t jobPid);
   void removeJobById(int jobId);
   JobEntry * getLastJob();
   JobEntry *getLastStoppedJob();
@@ -245,8 +247,8 @@ public:
         auto it = timeout_vec.begin();
         while (it != timeout_vec.end()) {
             if (it->getDuration() <= 0) {
-                if (jobs->getJobById(it->getJobId()) == nullptr && jobs->getFgPid() != it->getPid()) {
-                    //Jobs already finished..
+                if (jobs->getJobById(it->getJobId()) == nullptr && jobs->getFgPid() != it->getPid() && jobs->getJobByPid(it->getPid()) == nullptr) {
+                    //Job already finished..
                     it = timeout_vec.erase(it);
                     continue;
                 } else {
@@ -256,7 +258,9 @@ public:
             }
             return false;
         }
+        return false;
     }
+
     void removeTimeoutJobs(){
         auto it = timeout_vec.begin();
         while(it != timeout_vec.end()){
@@ -390,7 +394,7 @@ class SmallShell {
   vector<TimeoutList::TimeoutJobs> alarms;
 
  public:
-  Command *CreateCommand(const char* cmd_line);
+  Command *CreateCommand(const char* cmd_line, bool isPipe= false);
   SmallShell(SmallShell const&)      = delete; // disable copy ctor
   void operator=(SmallShell const&)  = delete; // disable = operator
   static SmallShell& getInstance() // make SmallShell singleton
@@ -408,6 +412,9 @@ class SmallShell {
   }
   JobsList* getJobsList(){
       return jobs_list;
+  }
+  pid_t getSmashPid(){
+      return pid;
   }
 
   TimeoutList* getTimeoutList(){

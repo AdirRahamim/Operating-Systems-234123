@@ -4,6 +4,7 @@
 #include <sstream>
 #include <iomanip>
 #include <fcntl.h>
+#include <climits>
 #include "Commands.h"
 #include "signals.h"
 
@@ -100,11 +101,9 @@ void _printError(const string err){
     cerr << "smash error: " << err << endl;
 }
 
-// TODO: Add your implementation for classes in Commands.h
-
 void CopyCommand::execute() {
     jobs_list->removeFinishedJobs();
-    if(num_arguments < 3 || (num_arguments == 4 && arguments[3][0] != '&') || num_arguments > 4){
+    if(num_arguments < 3){
         _printError("cp: invalid arguments");
         return;
     }
@@ -119,12 +118,26 @@ void CopyCommand::execute() {
         _removeBackgroundSign(temp);
         new_command = string(temp);
     }
+    char arg1[PATH_MAX];
+    char arg2[PATH_MAX];
+    char* res1 = realpath(arguments[1].c_str(), arg1);
+    char* res2 = realpath(arguments[2].c_str(), arg2);
+
 
     int read_file = open(arguments[1].c_str(), O_RDONLY);
     if(read_file == -1){
         perror("smash error: open failed");
         return;
     }
+
+    if(arguments[1] == arguments[2] || !strcmp(arg1, arg2)){
+        if(close(read_file) == -1){
+            perror("smash error: close failed");
+        }
+        cout << "smash: " << arguments[1] << " was copied to " << arguments[2] << endl;
+        return;
+    }
+
     int write_file = open(arguments[2].c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(write_file == -1){
         perror("smash error: open failed");
@@ -197,8 +210,6 @@ void CopyCommand::execute() {
             jobs_list->setFg("", -1, -1);
         }
     }
-
-
 }
 
 void TimeoutCommand::execute() {
@@ -339,7 +350,48 @@ void RedirectionCommand::execute() {
     }
 }
 
+bool isExternal(string cmd_line){
+    char cmd[COMMAND_ARGS_MAX_LENGTH];
+    strcpy(cmd, cmd_line.c_str());
+    _removeBackgroundSign(cmd);
+    vector<string> arguments;
+    int num_args = _parseCommandLine(cmd, arguments);
+    if(num_args == 0){
+        return false;
+    }
+    string first = string(arguments[0]);
+    string cmd_s = _trim(string(cmd_line));
 
+    if( first == "chprompt"){
+        return false;
+    }
+    else if(first == "showpid"){
+        return false;
+    }
+    else if(first == "pwd"){
+        return false;
+    }
+    else if(first == "cd"){
+        return false;
+    }
+    else if(first == "jobs"){
+        return false;
+    }
+    else if(first == "kill"){
+        return false;
+    }
+    else if(first == "fg"){
+        return false;
+    }
+    else if(first == "bg"){
+        return false;
+    }
+    else if(first == "quit"){
+        return false;
+    }
+    else return !(first == "cp");
+    return false;
+}
 
 void PipeCommand::execute() {
     jobs_list->removeFinishedJobs();
@@ -370,8 +422,8 @@ void PipeCommand::execute() {
     string cmd2 = new_command.substr(pipeIndex + 1 + (int) isStderrPipe);
 
     SmallShell &temp_smash = SmallShell::getInstance();
-    auto command1 = temp_smash.CreateCommand(cmd1.c_str());
-    auto command2 = temp_smash.CreateCommand(cmd2.c_str());
+    auto command1 = temp_smash.CreateCommand(cmd1.c_str(), true);
+    auto command2 = temp_smash.CreateCommand(cmd2.c_str(), true);
 
     pid_t pid = fork();
     if (pid < 0) {
@@ -379,10 +431,8 @@ void PipeCommand::execute() {
         return;
     } else if (pid == 0) {
         //Child
-        setpgrp();
-
-        pid = getpgrp();
-
+        setpgid(0,0);
+        //pid_t gid = getpgid(0);
         //Create pipe
         int fd[2];
         if (pipe(fd) == -1) {
@@ -397,7 +447,6 @@ void PipeCommand::execute() {
         } else if (pid_cmd1 == 0) {
 
             //Child command 1
-
             if (isStderrPipe) {
                 if (dup2(fd[1], STDERR_FILENO) == -1) {
                     perror("smash error: dup2 failed");
@@ -411,7 +460,12 @@ void PipeCommand::execute() {
             }
             close(fd[0]);
             close(fd[1]);
-            command1->execute();
+            if(isExternal(cmd1)){
+                execl(BASH_PATH, BASH_PATH, "-c", cmd1.c_str(), nullptr);
+            }
+            else{
+                command1->execute();
+            }
             exit(0);
         } else {
 
@@ -423,45 +477,57 @@ void PipeCommand::execute() {
                 perror("smash error: fork failed");
                 return;
             } else if (pid_cmd2 == 0) {
-
                 if (dup2(fd[0], STDIN_FILENO) == -1) {
                     perror("smash error: dup2 failed");
                     return;
                 }
                 close(fd[1]);
                 close(fd[0]);
-                command2->execute();
+                if(isExternal(cmd2)){
+                    execl(BASH_PATH, BASH_PATH, "-c", cmd2.c_str(), nullptr);
+                }
+                else{
+                    command2->execute();
+                }
                 exit(0);
             }
             else{
                 close(fd[0]);
                 close(fd[1]);
 
-                int res1 = waitpid(pid_cmd1, nullptr, WUNTRACED);
-                int res2= waitpid(pid_cmd2, nullptr, WUNTRACED);
+                int status1, status2;
+                int res1 = waitpid(pid_cmd1, &status1, WUNTRACED);
+                int res2 = waitpid(pid_cmd2, &status2, WUNTRACED);
+
                 if (res1 == -1 || res2 == -1) {
                     perror("smash error: waitpid failed");
                     return;
-                }
 
+                }
                 exit(0);
             }
         }
 
     } else {
         //Parent
-
         if (is_bg) {
             jobs_list->addJob(command, pid, false);
             return; //No need to wait...
         } else {
             jobs_list->setFg(command, pid, -1);
             int res = waitpid(pid, nullptr, WUNTRACED);
+
             if (res == -1) {
                 perror("smash error: waitpid failed");
                 return;
             }
             jobs_list->setFg("", -1, -1);
+        }
+        if(signal(SIGTSTP , ctrlZHandler)==SIG_ERR) {
+            perror("smash error: failed to set ctrl-Z handler");
+        }
+        if(signal(SIGINT , ctrlCHandler)==SIG_ERR) {
+            perror("smash error: failed to set ctrl-C handler");
         }
     }
 
@@ -488,7 +554,9 @@ void ExternalCommand::execute() {
         return;
     }
     else if( pid == 0){ //Child proccess
-        setpgrp();
+        if(!isPipe){
+            setpgrp();
+        }
         execl(BASH_PATH, BASH_PATH, "-c", new_command.c_str(), nullptr);
         perror("smash error: execl failed");
         exit(0);
@@ -502,7 +570,8 @@ void ExternalCommand::execute() {
         else{
             //Running foreground -> wait to finish
             jobs_list->setFg(command, pid, -1);
-            int res = waitpid(pid, nullptr, WUNTRACED);
+            int status=0;
+            int res = waitpid(pid, &status, WUNTRACED);
             if(res == -1){
                 perror("smash error: waitpid failed");
                 return;
@@ -510,8 +579,6 @@ void ExternalCommand::execute() {
             jobs_list->setFg("",-1, -1);
         }
     }
-
-
 }
 
 SmallShell::SmallShell() {
@@ -529,13 +596,11 @@ SmallShell::~SmallShell() {
 
 }
 
-
-
 /**
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
 
-Command * SmallShell::CreateCommand(const char* cmd_line) {
+Command * SmallShell::CreateCommand(const char* cmd_line, bool isPipe) {
 	// For example:
 /*
   string cmd_s = string(cmd_line);
@@ -566,7 +631,7 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
         return new RedirectionCommand(cmd_line, jobs_list);
     }
     else if( first == "chprompt"){
-        return new ChpromptCommand(cmd_line, prompt);
+        return new ChpromptCommand(cmd, prompt);
     }
     else if(first == "showpid"){
         return new ShowPidCommand(cmd_line, pid);
@@ -599,7 +664,7 @@ Command * SmallShell::CreateCommand(const char* cmd_line) {
         return new TimeoutCommand(cmd_line, jobs_list, timeout_list);
     }
     else{
-        return new ExternalCommand(cmd_line, jobs_list);
+        return new ExternalCommand(cmd_line, jobs_list, isPipe);
     }
     return nullptr;
 }
@@ -662,7 +727,7 @@ void ChangeDirCommand::execute() {
     }
     if(res == -1){
         //Error...
-        perror("smash error: cd failed");
+        perror("smash error: chdir failed");
         return;
     }
     else{
@@ -851,7 +916,9 @@ void JobsList::fgJob(int jobId) {
         perror("smash error: kill failed");
     }
     else{
-        int res = waitpid(job_pid, nullptr, WUNTRACED);
+        int status;
+        int res = waitpid(job_pid, &status, WUNTRACED);
+
         if(res == -1){
             perror("smash error: waitpid failed");
         }
@@ -911,6 +978,20 @@ int JobsList::getFgId() {
     return fgId;
 }
 
+JobsList::JobEntry *JobsList::getJobByPid(pid_t job_pid) {
+    auto it = jobs.begin();
+    while(it != jobs.end()){
+        if(job_pid == it->getJobPid()){
+            return &(*it);
+        }
+        else{
+            it++;
+        }
+    }
+    return nullptr;
+}
+
+
 void JobsCommand::execute() {
     jobs_list->printJobsList();
 }
@@ -927,17 +1008,18 @@ void KillCommand::execute() {
     string job_id = arguments[2];
 
     //Determine if '-' sign exits and the arguments are numbers
-    if(arguments[1][0] != '-' || !checkNumber(signum.substr(1)) || !checkNumber(job_id)){
+    if(!checkNumber(signum) || !checkNumber(job_id)){
         _printError("kill: invalid arguments");
         return;
     }
 
     //Arrive here -> syntax is valid!
     int signal_num = atoi(arguments[1].c_str());
+    /*
     if(signal_num>=0 || signal_num < -31){
         _printError("kill: invalid arguments");
         return;
-    }
+    }*/
     int id_num = atoi(arguments[2].c_str());
     //Check if job id exits
     if(jobs_list->getJobById(id_num) == nullptr){
@@ -959,6 +1041,7 @@ void KillCommand::execute() {
 }
 
 void ForegroundCommand::execute() {
+    jobs_list->removeFinishedJobs();
     if(num_arguments > 2){
         _printError("fg: invalid arguments");
         return;
@@ -1035,6 +1118,7 @@ void BackgroundCommand::execute() {
 }
 
 void QuitCommand::execute() {
+    jobs_list->removeFinishedJobs();
     if(num_arguments > 1){
         for(int i=1 ; i<num_arguments; i++){
             if(string(arguments[i]) == "kill"){
