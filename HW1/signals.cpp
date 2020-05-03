@@ -107,11 +107,10 @@ void alarmHandler(int sig_num) {
   smash.getJobsList()->removeFinishedJobs();
   smash.getTimeoutList()->update();
   if(!smash.getTimeoutList()->checkAreFinished()){
-
   }
   else{
       smash.getTimeoutList()->removeTimeoutJobs();
-      smash.getTimeoutList()->callNext();
   }
+  smash.getTimeoutList()->callNext();
 }
 

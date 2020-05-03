@@ -212,9 +212,52 @@ void CopyCommand::execute() {
     }
 }
 
+bool isExternal(string cmd_line){
+    char cmd[COMMAND_ARGS_MAX_LENGTH];
+    strcpy(cmd, cmd_line.c_str());
+    _removeBackgroundSign(cmd);
+    vector<string> arguments;
+    int num_args = _parseCommandLine(cmd, arguments);
+    if(num_args == 0){
+        return false;
+    }
+    string first = string(arguments[0]);
+    string cmd_s = _trim(string(cmd_line));
+
+    if( first == "chprompt"){
+        return false;
+    }
+    else if(first == "showpid"){
+        return false;
+    }
+    else if(first == "pwd"){
+        return false;
+    }
+    else if(first == "cd"){
+        return false;
+    }
+    else if(first == "jobs"){
+        return false;
+    }
+    else if(first == "kill"){
+        return false;
+    }
+    else if(first == "fg"){
+        return false;
+    }
+    else if(first == "bg"){
+        return false;
+    }
+    else if(first == "quit"){
+        return false;
+    }
+    else return !(first == "cp");
+    return false;
+}
+
 void TimeoutCommand::execute() {
     jobs_list->removeFinishedJobs();
-    if(num_arguments == 1){
+    if(num_arguments < 3){
         _printError("timeout: invalid arguments");
         return;
     }
@@ -232,7 +275,7 @@ void TimeoutCommand::execute() {
     string new_command;
 
     for(int i = 2 ; i<num_arguments ; i++){
-        new_command = new_command + " " + string(arguments[i]);
+        new_command += " " + string(arguments[i]);
     }
     new_command = _trim(new_command);
 
@@ -250,6 +293,50 @@ void TimeoutCommand::execute() {
     SmallShell& temp_smash = SmallShell::getInstance();
     auto _command = temp_smash.CreateCommand(new_command.c_str());
 
+    bool ext = isExternal(new_command);
+    if(ext){
+        int pid = fork();
+
+        if( pid < 0){
+            perror("smash error: fork failed");
+            return;
+        }
+        else if(pid == 0){
+            //Child
+            setpgrp();
+            execl(BASH_PATH, BASH_PATH, "-c", new_command.c_str(), nullptr);
+            exit(0);
+        }
+        else{
+            //Parent
+            if(is_bg){
+                int job_id = jobs_list->addJob(command,pid, false);
+                timeout_list->InsertAndCall(command, job_id, timeout_time, pid);
+                return; //No need to wait...
+            }
+            else{
+                jobs_list->setFg(command, pid, -1);
+                timeout_list->InsertAndCall(command, -1, timeout_time, pid);
+                int res = waitpid(pid, nullptr, WUNTRACED);
+                if(res == -1){
+                    perror("smash error: waitpid failed");
+                    return;
+                }
+
+                jobs_list->setFg("", -1 , -1);
+            }
+
+        }
+    }
+
+    else{
+        //Built in command
+        //First do the command, no need to wait as it built in...
+        _command->execute();
+        //Add a "Fake" command so still there will be alarm
+        timeout_list->InsertAndCall(command, -1, timeout_time, -1);
+    }
+    /*
     int pid = fork();
 
     if( pid < 0){
@@ -282,7 +369,7 @@ void TimeoutCommand::execute() {
         }
 
     }
-
+*/
 }
 
 void RedirectionCommand::execute() {
@@ -348,49 +435,6 @@ void RedirectionCommand::execute() {
         perror("smash error: close failed");
         return;
     }
-}
-
-bool isExternal(string cmd_line){
-    char cmd[COMMAND_ARGS_MAX_LENGTH];
-    strcpy(cmd, cmd_line.c_str());
-    _removeBackgroundSign(cmd);
-    vector<string> arguments;
-    int num_args = _parseCommandLine(cmd, arguments);
-    if(num_args == 0){
-        return false;
-    }
-    string first = string(arguments[0]);
-    string cmd_s = _trim(string(cmd_line));
-
-    if( first == "chprompt"){
-        return false;
-    }
-    else if(first == "showpid"){
-        return false;
-    }
-    else if(first == "pwd"){
-        return false;
-    }
-    else if(first == "cd"){
-        return false;
-    }
-    else if(first == "jobs"){
-        return false;
-    }
-    else if(first == "kill"){
-        return false;
-    }
-    else if(first == "fg"){
-        return false;
-    }
-    else if(first == "bg"){
-        return false;
-    }
-    else if(first == "quit"){
-        return false;
-    }
-    else return !(first == "cp");
-    return false;
 }
 
 void PipeCommand::execute() {
@@ -1078,7 +1122,7 @@ void ForegroundCommand::execute() {
 
 void BackgroundCommand::execute() {
     if(num_arguments > 2){
-        _printError("fg: invalid arguments");
+        _printError("bg: invalid arguments");
         return;
     }
 

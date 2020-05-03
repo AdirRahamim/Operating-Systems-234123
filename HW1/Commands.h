@@ -227,7 +227,7 @@ public:
             return job_pid;
         }
 
-        int getJobId(){
+        int getJobId() const{
             return job_id;
         }
 
@@ -247,11 +247,18 @@ public:
         auto it = timeout_vec.begin();
         while (it != timeout_vec.end()) {
             if (it->getDuration() <= 0) {
-                if (jobs->getJobById(it->getJobId()) == nullptr && jobs->getFgPid() != it->getPid() && jobs->getJobByPid(it->getPid()) == nullptr) {
+                if(it->getPid() == -1){
+                    //It is a built in command that already finished...
+                    it = timeout_vec.erase(it);
+                    continue;
+                }
+                else if (jobs->getJobById(it->getJobId()) == nullptr && jobs->getFgPid() != it->getPid() && jobs->getJobByPid(it->getPid()) == nullptr) {
                     //Job already finished..
                     it = timeout_vec.erase(it);
                     continue;
-                } else {
+                }
+
+                else {
                     //Found unfinished job
                     return true;
                 }
@@ -278,12 +285,10 @@ public:
     }
 
     void InsertAndCall(string cmd, int job_id, int duration, pid_t pid){
-        pid_t current_pid = -1;
-        if(!timeout_vec.empty()){
-            current_pid = timeout_vec.begin()->getPid();
-        }
+        update();
         TimeoutJobs job = TimeoutJobs(cmd, job_id, duration, pid);
         timeout_vec.push_back(job);
+        /*
         sort(timeout_vec.begin(), timeout_vec.end());
         if(current_pid == -1){
             alarm(duration);
@@ -294,6 +299,12 @@ public:
             alarm(timeout_vec.begin()->getDuration());
         }
         //Dont call now new alarm because we entered alarm after the current one...
+         */
+        sort(timeout_vec.begin(), timeout_vec.end());
+        if(!timeout_vec.empty()){
+            auto it = timeout_vec.begin();
+            alarm(it->getDuration());
+        }
     }
 
     void update(){
