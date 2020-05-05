@@ -118,27 +118,31 @@ void CopyCommand::execute() {
         _removeBackgroundSign(temp);
         new_command = string(temp);
     }
+
+    vector<string> new_arguments;
+    _parseCommandLine(new_command.c_str(), new_arguments);
+
     char arg1[PATH_MAX];
     char arg2[PATH_MAX];
-    char* res1 = realpath(arguments[1].c_str(), arg1);
-    char* res2 = realpath(arguments[2].c_str(), arg2);
+    char* res1 = realpath(new_arguments[1].c_str(), arg1);
+    char* res2 = realpath(new_arguments[2].c_str(), arg2);
 
 
-    int read_file = open(arguments[1].c_str(), O_RDONLY);
+    int read_file = open(new_arguments[1].c_str(), O_RDONLY);
     if(read_file == -1){
         perror("smash error: open failed");
         return;
     }
 
-    if(arguments[1] == arguments[2] || !strcmp(arg1, arg2)){
+    if(new_arguments[1] == new_arguments[2] || !strcmp(arg1, arg2)){
         if(close(read_file) == -1){
             perror("smash error: close failed");
         }
-        cout << "smash: " << arguments[1] << " was copied to " << arguments[2] << endl;
+        cout << "smash: " << new_arguments[1] << " was copied to " << new_arguments[2] << endl;
         return;
     }
 
-    int write_file = open(arguments[2].c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    int write_file = open(new_arguments[2].c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(write_file == -1){
         perror("smash error: open failed");
         if(close(read_file) == -1){
@@ -192,7 +196,7 @@ void CopyCommand::execute() {
         if(close(read_file) == -1 || close(write_file) == -1){
             perror("smash error: close failed");
         }
-        cout << "smash: " << arguments[1] << " was copied to " << arguments[2] << endl;
+        cout << "smash: " << new_arguments[1] << " was copied to " << new_arguments[2] << endl;
         exit(0);
     }
     else{
@@ -439,6 +443,7 @@ void RedirectionCommand::execute() {
 
 void PipeCommand::execute() {
     jobs_list->removeFinishedJobs();
+    /*
     if(signal(SIGTSTP , ctrlZHandlerPipe)==SIG_ERR) {
         perror("smash error: failed to set ctrl-Z handler");
         return;
@@ -447,6 +452,7 @@ void PipeCommand::execute() {
         perror("smash error: failed to set ctrl-C handler");
         return;
     }
+     */
     bool is_bg = false;
     string new_command = command;
     if (_isBackgroundComamnd(command.c_str())) {
@@ -567,12 +573,14 @@ void PipeCommand::execute() {
             }
             jobs_list->setFg("", -1, -1);
         }
+        /*
         if(signal(SIGTSTP , ctrlZHandler)==SIG_ERR) {
             perror("smash error: failed to set ctrl-Z handler");
         }
         if(signal(SIGINT , ctrlCHandler)==SIG_ERR) {
             perror("smash error: failed to set ctrl-C handler");
         }
+         */
     }
 
 }
@@ -991,13 +999,22 @@ pid_t JobsList::getFgPid() {
 void JobsList::bgJob(int jobId) {
     JobEntry* job = getJobById(jobId);
     cout << job->getCmd() << " : " << job->getJobPid() << endl;
-    if(kill(job->getJobPid(), SIGCONT) == -1){
-        perror("smash error: kill failed");
+    bool isPipe = false;
+    if(job->getCmd().find('|') != string::npos){
+        isPipe = true;
+    }
+    int res = 0;
+    if(isPipe){
+        res = killpg(job->getJobPid(), SIGCONT);
     }
     else{
-
-        job->setJobStatus(true);
+        res = kill(job->getJobPid(), SIGCONT);
     }
+    if(res == -1){
+        perror("smash error: kill failed");
+    }
+    job->setJobStatus(true);
+
 }
 
 void JobsList::resetTime(int jobId) {
@@ -1075,13 +1092,27 @@ void KillCommand::execute() {
 
     pid_t pid = jobs_list->getJobById(id_num)->getJobPid();
     signal_num = (-1) * signal_num;
-    if(kill(pid, signal_num) == -1){
-        //Error...
-        perror("smash error: kill failed");
+
+    string job_cmd = jobs_list->getJobById(id_num)->getCmd();
+    bool isPipe = false;
+    if(job_cmd.find('|') != string::npos){
+        isPipe = true;
+    }
+    if(isPipe){
+        if(killpg(pid, signal_num) == -1){
+            //Error...
+            perror("smash error: kill failed");
+            return;
+        }
     }
     else{
-        cout << "signal number " << signal_num << " was sent to pid " << pid << endl;
+        if(kill(pid, signal_num) == -1){
+            //Error...
+            perror("smash error: kill failed");
+            return;
+        }
     }
+    cout << "signal number " << signal_num << " was sent to pid " << pid << endl;
 }
 
 void ForegroundCommand::execute() {
