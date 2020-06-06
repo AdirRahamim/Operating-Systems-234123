@@ -21,7 +21,7 @@ void Barrier::wait() {
 
     //If all threads arrived barrier - unlock them
     if(counter == N){
-        for(int i=0; i<N; i++){
+        for(unsigned int i=0; i<N; i++){
             sem_post(&sem);
         }
     }
@@ -34,7 +34,7 @@ void Barrier::wait() {
     counter--;
 
     if(counter == 0){
-        for(int i=0; i<N; i++){
+        for(unsigned int i=0; i<N; i++){
             sem_post(&sem2);
         }
     }

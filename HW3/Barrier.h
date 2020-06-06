@@ -9,7 +9,7 @@ private:
     sem_t mutex;
     sem_t sem2;
     unsigned int N;
-    int counter;
+    unsigned int counter;
 public:
     Barrier(unsigned int num_of_threads);
     void wait();
