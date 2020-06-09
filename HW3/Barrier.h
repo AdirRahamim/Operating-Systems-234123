@@ -5,11 +5,11 @@
 
 class Barrier {
 private:
-    sem_t sem;
+    sem_t barrier;
+    sem_t barrier2;
     sem_t mutex;
-    sem_t sem2;
     unsigned int N;
-    unsigned int counter;
+    unsigned int waiting_threads;
 public:
     Barrier(unsigned int num_of_threads);
     void wait();
