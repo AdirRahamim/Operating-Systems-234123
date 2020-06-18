@@ -113,6 +113,9 @@ void* smalloc(size_t size){
 }
 
 void*scalloc(size_t num, size_t size){
+    if(num == 0){
+        return nullptr;
+    }
     void* smalloc_res = smalloc(num*size);
     if(smalloc_res == nullptr){
         return nullptr;
@@ -157,4 +160,3 @@ void* srealloc(void* oldp, size_t size){
     sfree(oldp);
     return smalloc_res;
 }
-
