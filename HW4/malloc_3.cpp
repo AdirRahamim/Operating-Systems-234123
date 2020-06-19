@@ -46,6 +46,11 @@ size_t _num_allocated_blocks(){
         counter++;
         curr = curr->next;
     }
+    curr = mmap_list_dummy.next;
+    while(curr != nullptr){
+        counter++;
+        curr = curr->next;
+    }
     return counter;
 }
 
@@ -54,6 +59,11 @@ size_t _num_allocated_bytes(){
     MallocMetadata* curr = (dummy.next);
     while (curr != nullptr){
         counter += curr->size;
+        curr = curr->next;
+    }
+    curr = mmap_list_dummy.next;
+    while(curr != nullptr){
+        counter+=curr->size;
         curr = curr->next;
     }
     return counter;
@@ -162,7 +172,7 @@ void* smalloc(size_t size){
     while(curr->next != nullptr){
         curr = curr->next;
     }
-    if(curr->is_free){
+    if(curr->is_free and curr->next = nullptr){
         //Last block is free - enlarge it
         void* res = sbrk(size - curr->size);
         if(res == (void*)-1){
@@ -271,20 +281,63 @@ void* srealloc(void* oldp, size_t size){
 
     //priority b - try to merge lower address
     if(meta->prev->is_free){
+        if(meta->size + meta->prev->size >= size){
+            meta->prev->is_free = false;
+            meta->prev->next = meta->next;
+            if(meta->next != nullptr){
+                meta->next->prev = meta->prev;
+            }
+            meta->prev->size += meta->size + _size_meta_data();
+            memcpy((void*)((size_t)meta->prev + _size_meta_data()), (void*)((size_t)meta+_size_meta_data()), meta->size);
 
+            if(_check_split(meta->prev->size, size)){
+                _split_block(meta->prev, size);
+            }
+            return meta->prev;
+        }
     }
 
-    //==============================================================
+    //Option c - try to merge with next one
+    if(meta->next != nullptr){
+        if(meta->next->is_free and meta->size + meta->next->size >= size){
+            meta->is_free = false;
+            meta->next = meta->next->next;
+            if(meta->next->next != nullptr){
+                meta->next->next = meta;
+            }
+            meta->size += meta->next->size + _size_meta_data();
 
-    //Current block size is smaller, find new one and realse
-    void* smalloc_res = smalloc(size);
-    if(smalloc_res == nullptr){
-        return nullptr;
+            if(_check_split(meta->size, size)){
+                _split_block(meta, size);
+            }
+            return meta;
+        }
     }
 
-    std::memcpy(smalloc_res, oldp, meta->size);
-    sfree(oldp);
-    return smalloc_res;
+    //option c - try to merge two neighbors
+    if(meta->prev!= nullptr and meta->next!= nullptr){
+        if(meta->prev->is_free and meta->next->is_free and meta->size+meta->prev->size+meta->next->size >= size){
+            meta->prev->is_free = false;
+            meta->prev->next = meta->next->next;
+            if(meta->next->next != nullptr){
+                meta->next->next->prev = meta->prev;
+            }
+            meta->prev->size += meta->size + meta->next->size + 2*_size_meta_data();
 
-    //================================================================
+            memcpy((void*)((size_t)meta->prev + _size_meta_data()), (void*)((size_t)meta+_size_meta_data()), meta->size);
+            if(_check_split(meta->prev->size, size)){
+                _split_block(meta->prev, size);
+            }
+            return meta->prev;
+        }
+
+        //option d - try to find different block or allocate - smalloc will take care of it
+        void* smalloc_res = smalloc(size);
+        if(smalloc_res == nullptr){
+            return nullptr;
+        }
+        memcpy(smalloc_res, oldp, meta->size);
+        sfree(oldp);
+        return smalloc_res;
+    }
 }
