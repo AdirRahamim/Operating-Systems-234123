@@ -188,7 +188,7 @@ void* smalloc(size_t size){
     while(curr->next != nullptr){
         curr = curr->next;
     }
-    if(curr->is_free and curr->next = nullptr){
+    if(curr->is_free and curr->next == nullptr){
         //Last block is free - enlarge it
         void* res = sbrk(size - curr->size);
         if(res == (void*)-1){
@@ -218,7 +218,7 @@ void* scalloc(size_t num, size_t size){
 void _free_mmap(MallocMetadata* meta){
     MallocMetadata* next = meta->next;
     MallocMetadata* prev = meta->prev;
-    if(munap(meta, meta->size+_size_meta_data()) == -1){
+    if(munmap(meta, meta->size+_size_meta_data()) == -1){
         return;
     }
     //munap succeed
@@ -233,8 +233,8 @@ void _combine_blocks(MallocMetadata* meta){
     if(meta->next != nullptr and meta->next->is_free){
         meta->size += meta->next->size + _size_meta_data();
         meta->next = meta->next->next;
-        if(meta->next->next != nullptr){
-            meta->next->next->prev = meta;
+        if(meta->next != nullptr){
+            meta->next->prev = meta;
         }
     }
     //try to combine with prev
@@ -282,12 +282,15 @@ void* srealloc(void* oldp, size_t size){
 
     MallocMetadata* meta = (MallocMetadata*)((size_t)oldp - _size_meta_data());
     if(meta->size >= MMAP_THRESHOLD){
+        if(meta->size >= size){
+            return oldp;
+        }
         void* mmap_res = _mmap_alloc(size);
         if(mmap_res == nullptr){
             return nullptr;
         }
-        size_t min_size = size > meta->size ? size : meta->size;
-        memcpy(mmap_res, (void*)((size_t)meta + _size_meta_data()), min_size);
+        size_t min_size = size > meta->size ? meta->size : size;
+        memmove(mmap_res, (void*)((size_t)meta + _size_meta_data()), min_size);
         _free_mmap(meta);
         return mmap_res;
     }
@@ -300,6 +303,16 @@ void* srealloc(void* oldp, size_t size){
         return oldp;
     }
 
+    //If wilderness block
+    if(meta->next = nullptr){
+        void* sbrk_res = sbrk(size - meta->size);
+        if(sbrk_res == (void*)-1){
+            return nullptr;
+        }
+        meta->size = size;
+        meta->is_free = false;
+    }
+
     //priority b - try to merge lower address
     if(meta->prev->is_free){
         if(meta->size + meta->prev->size >= size){
@@ -309,7 +322,7 @@ void* srealloc(void* oldp, size_t size){
                 meta->next->prev = meta->prev;
             }
             meta->prev->size += meta->size + _size_meta_data();
-            memcpy((void*)((size_t)meta->prev + _size_meta_data()), (void*)((size_t)meta+_size_meta_data()), meta->size);
+            memmove((void*)((size_t)meta->prev + _size_meta_data()), (void*)((size_t)meta+_size_meta_data()), meta->size);
 
             if(_check_split(meta->prev->size, size)){
                 _split_block(meta->prev, size);
@@ -345,7 +358,7 @@ void* srealloc(void* oldp, size_t size){
             }
             meta->prev->size += meta->size + meta->next->size + 2*_size_meta_data();
 
-            memcpy((void*)((size_t)meta->prev + _size_meta_data()), (void*)((size_t)meta+_size_meta_data()), meta->size);
+            memmove((void*)((size_t)meta->prev + _size_meta_data()), (void*)((size_t)meta+_size_meta_data()), meta->size);
             if(_check_split(meta->prev->size, size)){
                 _split_block(meta->prev, size);
             }
@@ -357,7 +370,7 @@ void* srealloc(void* oldp, size_t size){
         if(smalloc_res == nullptr){
             return nullptr;
         }
-        memcpy(smalloc_res, oldp, meta->size);
+        memmove(smalloc_res, oldp, meta->size);
         sfree(oldp);
         return smalloc_res;
     }
