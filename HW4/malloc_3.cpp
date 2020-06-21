@@ -279,6 +279,16 @@ void* srealloc(void* oldp, size_t size){
         return oldp;
     }
 
+    //If wilderness block
+    if(meta->next = nullptr){
+        void* sbrk_res = sbrk(size - meta->size);
+        if(sbrk_res == (void*)-1){
+            return nullptr;
+        }
+        meta->size = size;
+        meta->is_free = false;
+    }
+
     //priority b - try to merge lower address
     if(meta->prev->is_free){
         if(meta->size + meta->prev->size >= size){
