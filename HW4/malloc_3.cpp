@@ -283,13 +283,14 @@ void* srealloc(void* oldp, size_t size){
     }
 
     //If wilderness block
-    if(meta->next = nullptr){
+    if(meta->next == nullptr){
         void* sbrk_res = sbrk(size - meta->size);
         if(sbrk_res == (void*)-1){
             return nullptr;
         }
         meta->size = size;
         meta->is_free = false;
+        return oldp;
     }
 
     //priority b - try to merge lower address
@@ -301,12 +302,13 @@ void* srealloc(void* oldp, size_t size){
                 meta->next->prev = meta->prev;
             }
             meta->prev->size += meta->size + _size_meta_data();
+            MallocMetadata* prev = meta->prev;
             memmove((void*)((size_t)meta->prev + _size_meta_data()), (void*)((size_t)meta+_size_meta_data()), meta->size);
 
-            if(_check_split(meta->prev->size, size)){
-                _split_block(meta->prev, size);
+            if(_check_split(prev->size, size)){
+                _split_block(prev, size);
             }
-            return meta->prev;
+            return (void*)((size_t)prev+_size_meta_data());
         }
     }
 
@@ -323,7 +325,7 @@ void* srealloc(void* oldp, size_t size){
             if(_check_split(meta->size, size)){
                 _split_block(meta, size);
             }
-            return meta;
+            return (void*)((size_t)meta+_size_meta_data());
         }
     }
 
@@ -336,12 +338,13 @@ void* srealloc(void* oldp, size_t size){
                 meta->next->next->prev = meta->prev;
             }
             meta->prev->size += meta->size + meta->next->size + 2*_size_meta_data();
+            MallocMetadata* prev = meta->prev;
 
-            memmove((void*)((size_t)meta->prev + _size_meta_data()), (void*)((size_t)meta+_size_meta_data()), meta->size);
-            if(_check_split(meta->prev->size, size)){
-                _split_block(meta->prev, size);
+            memmove((void*)((size_t)prev + _size_meta_data()), (void*)((size_t)meta+_size_meta_data()), meta->size);
+            if(_check_split(prev->size, size)){
+                _split_block(prev, size);
             }
-            return meta->prev;
+            return (void*)((size_t)prev+_size_meta_data());
         }
 
         //option d - try to find different block or allocate - smalloc will take care of it
