@@ -323,11 +323,11 @@ void* srealloc(void* oldp, size_t size){
     if(meta->next != nullptr){
         if(meta->next->is_free and meta->size + meta->next->size >= size){
             meta->is_free = false;
-            meta->next = meta->next->next;
             if(meta->next->next != nullptr){
-                meta->next->next = meta;
+                meta->next->next->prev = meta;
             }
             meta->size += meta->next->size + _size_meta_data();
+            meta->next = meta->next->next;
 
             if(_check_split(meta->size, size)){
                 _split_block(meta, size);
@@ -336,7 +336,7 @@ void* srealloc(void* oldp, size_t size){
         }
     }
 
-    //option c - try to merge two neighbors
+    //option d - try to merge two neighbors
     if(meta->prev!= nullptr and meta->next!= nullptr){
         if(meta->prev->is_free and meta->next->is_free and meta->size+meta->prev->size+meta->next->size >= size){
             meta->prev->is_free = false;

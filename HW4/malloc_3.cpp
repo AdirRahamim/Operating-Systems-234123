@@ -202,7 +202,7 @@ void* scalloc(size_t num, size_t size){
 void _free_mmap(MallocMetadata* meta){
     MallocMetadata* next = meta->next;
     MallocMetadata* prev = meta->prev;
-    if(munap(meta, meta->size+_size_meta_data()) == -1){
+    if(munmap(meta, meta->size+_size_meta_data()) == -1){
         return;
     }
     //munap succeed
@@ -261,9 +261,6 @@ void* srealloc(void* oldp, size_t size){
 
     MallocMetadata* meta = (MallocMetadata*)((size_t)oldp - _size_meta_data());
     if(meta->size >= MMAP_THRESHOLD){
-        if(meta->size >= size){
-            return oldp;
-        }
         void* mmap_res = _mmap_alloc(size);
         if(mmap_res == nullptr){
             return nullptr;
@@ -316,12 +313,11 @@ void* srealloc(void* oldp, size_t size){
     if(meta->next != nullptr){
         if(meta->next->is_free and meta->size + meta->next->size >= size){
             meta->is_free = false;
-            meta->next = meta->next->next;
             if(meta->next->next != nullptr){
-                meta->next->next = meta;
+                meta->next->next->prev = meta;
             }
             meta->size += meta->next->size + _size_meta_data();
-
+            meta->next = meta->next->next;
             if(_check_split(meta->size, size)){
                 _split_block(meta, size);
             }
